@@ -110,7 +110,7 @@ includeBaseline: false
 ```yaml
 - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 - name: Audit the candidate update
-  uses: yewud/depdiff@8190e07ef655c5aba2c072c16e915b67334cbabe # reviewed v0.1 implementation
+  uses: yewud/depdiff@4a37a516d9f8d4d147457ec561d126618ffc6906 # reviewed release-hardened implementation
   with:
     before: package-name@1.4.0
     after: package-name@1.5.0
