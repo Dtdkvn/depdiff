@@ -11,6 +11,7 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) conventi
 - validated redirects before requests, streamed registry metadata through its cap, and hardened strongest-digest verification;
 - corrected workspace-aware SARIF/annotation paths, CLI exit codes, report sanitization, and concurrent output writes;
 - pinned CI/container supply-chain inputs and added Action/distribution regression coverage.
+- moved final containers to supported Node 24, upgraded Alpine packages, and removed unused global package-manager toolchains from runtime images.
 
 ## [0.1.0] - 2026-08-11
 

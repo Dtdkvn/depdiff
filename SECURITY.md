@@ -67,6 +67,6 @@ Maintainers aim to acknowledge reports within 72 hours, provide an initial asses
 
 ## Dependency installation
 
-Project development and images use `npm ci --ignore-scripts`, so dependencies do not run lifecycle hooks during setup. Target-package dependencies are never installed under any mode.
+Project development and image builders use `npm ci --ignore-scripts`, so dependencies do not run lifecycle hooks during setup. Final images use a supported, digest-pinned Node 24 base, upgrade Alpine packages during the build, and remove the global npm, npx, corepack, and Yarn toolchains after production dependencies are installed. Target-package dependencies are never installed under any mode.
 
 For TLS-inspecting development networks, both Dockerfiles accept the trusted root only as an optional BuildKit secret: `docker build --secret id=depdiff_ca,src=/path/to/root.pem .`. The certificate is available only to dependency-install steps and is not copied into an image layer.

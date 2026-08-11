@@ -48,6 +48,12 @@ describe('distribution contracts', () => {
       expect(dockerfile).toContain('test -x node_modules/.bin/tsc');
       expect(dockerfile).toContain("require.resolve(name)");
       expect(dockerfile).toContain('id=depdiff_ca,required=false');
+      expect(dockerfile).toContain('node:24-alpine@sha256:');
+      expect(dockerfile).toContain('apk upgrade --no-cache');
+      expect(dockerfile).toContain('cat /etc/ssl/certs/ca-certificates.crt /run/secrets/depdiff_ca');
+      expect(dockerfile).toContain('rm -f /tmp/depdiff-ca-bundle.pem');
+      expect(dockerfile).toContain('rm -rf /usr/local/lib/node_modules/npm');
+      expect(dockerfile).toContain('rm -f /usr/local/bin/npm');
     }
   });
 
