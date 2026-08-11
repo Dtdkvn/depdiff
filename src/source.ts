@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import {
   access,
@@ -235,10 +235,15 @@ async function downloadTarball(
       }
     },
   });
-  const partial = `${destination}.partial`;
+  const partial = `${destination}.${process.pid}.${randomUUID()}.partial`;
   try {
     await pipeline(Readable.fromWeb(response.body as never), limiter, createWriteStream(partial, { flags: 'wx' }));
-    await rename(partial, destination);
+    try {
+      await rename(partial, destination);
+    } catch (error) {
+      if (!(await isAccessible(destination))) throw error;
+      await rm(partial, { force: true });
+    }
   } catch (error) {
     await rm(partial, { force: true });
     if (error instanceof UserError) throw error;
