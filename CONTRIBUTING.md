@@ -4,10 +4,10 @@ Thank you for helping make npm update review more understandable and local-first
 
 ## Development setup
 
-Requirements: Node.js 20.12+ and npm 10+.
+Requirements: Node.js 22+ and npm 10+. Node 24 and the npm version declared by `packageManager` are the project defaults.
 
 ```bash
-git clone https://github.com/depdiff/depdiff.git
+git clone https://github.com/yewud/depdiff.git
 cd depdiff
 npm ci --ignore-scripts
 npm run check
@@ -45,5 +45,7 @@ Useful commands:
 ## Pull requests
 
 Keep changes focused, use conventional commit prefixes (`feat:`, `fix:`, `docs:`, `test:`, `chore:`), and explain security tradeoffs. Include generated report screenshots when changing HTML. CI must pass on every supported Node version.
+
+Release maintainers should also read the [release integrity workflow](docs/releasing.md).
 
 By participating, you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).

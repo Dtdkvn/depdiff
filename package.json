@@ -19,19 +19,26 @@
     "dist",
     "fixtures",
     "schemas",
+    "docs",
+    "examples",
     "README.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "engines": {
-    "node": ">=20.12"
+    "node": ">=22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean": "node scripts/clean.mjs",
     "dev": "tsx src/cli.ts",
-    "lint": "eslint src test && node --check scripts/action-entrypoint.mjs && node --check scripts/clean.mjs",
+    "lint": "eslint src test && node --check scripts/action-entrypoint.mjs && node --check scripts/clean.mjs && node --check scripts/npm-process.mjs && node --check scripts/package-smoke.mjs && node --check scripts/pack-release.mjs && node --check scripts/publish-release.mjs && node --check scripts/verify-release.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:package": "node scripts/package-smoke.mjs",
     "test:coverage": "vitest run --coverage",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build",
     "demo": "tsx src/cli.ts compare fixtures/safe-v1 fixtures/risky-v2 --offline --output .depdiff-demo/report.html --json .depdiff-demo/report.json --markdown .depdiff-demo/report.md --sarif .depdiff-demo/report.sarif --no-fail",
@@ -50,17 +57,17 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/depdiff/depdiff.git"
+    "url": "git+https://github.com/yewud/depdiff.git"
   },
   "bugs": {
-    "url": "https://github.com/depdiff/depdiff/issues"
+    "url": "https://github.com/yewud/depdiff/issues"
   },
-  "homepage": "https://github.com/depdiff/depdiff#readme",
+  "homepage": "https://github.com/yewud/depdiff#readme",
   "publishConfig": {
     "access": "public",
     "provenance": true
   },
-  "packageManager": "npm@10.8.2",
+  "packageManager": "npm@11.17.0",
   "dependencies": {
     "@babel/parser": "^7.28.0",
     "commander": "^14.0.0",

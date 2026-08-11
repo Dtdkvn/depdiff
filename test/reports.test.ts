@@ -18,9 +18,10 @@ describe('report formats', () => {
   it('emits SARIF with rules, results, fingerprints, and locations', async () => {
     const sarif = JSON.parse(renderSarif(await audit(safe, risky, { offline: true }), { workspace: projectRoot })) as {
       version: string;
-      runs: Array<{ tool: { driver: { rules: unknown[] } }; results: Array<{ locations?: Array<{ physicalLocation: { artifactLocation: { uri: string } } }> }> }>;
+      runs: Array<{ tool: { driver: { informationUri: string; rules: unknown[] } }; results: Array<{ locations?: Array<{ physicalLocation: { artifactLocation: { uri: string } } }> }> }>;
     };
     expect(sarif.version).toBe('2.1.0');
+    expect(sarif.runs[0]?.tool.driver.informationUri).toBe('https://github.com/yewud/depdiff');
     expect(sarif.runs[0]?.tool.driver.rules.length).toBeGreaterThan(5);
     expect(sarif.runs[0]?.results[0]).toHaveProperty('partialFingerprints.depdiffFingerprint');
     expect(sarif.runs[0]?.results.some((result) => result.locations?.[0]?.physicalLocation.artifactLocation.uri.startsWith('fixtures/risky-v2/'))).toBe(true);

@@ -8,21 +8,47 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   npm:
     runs-on: ubuntu-latest
     environment: npm
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org
           cache: npm
+      - name: Verify release source before credentials
+        id: verify
+        run: node scripts/verify-release.mjs
       - run: npm ci --ignore-scripts
       - run: npm run check
-      - name: Verify tag matches package version
-        run: node -e "const p=require('./package.json'); if (process.env.GITHUB_REF_NAME !== 'v'+p.version) { throw new Error('Tag '+process.env.GITHUB_REF_NAME+' does not match package version '+p.version) }"
-      - run: npm publish --provenance --access public
+      - name: Pack the verified artifact exactly once
+        id: pack
+        run: node scripts/pack-release.mjs
+      - name: Smoke-test the exact release artifact
+        run: node scripts/package-smoke.mjs "${{ steps.pack.outputs.tarball }}"
+      - name: Preserve the exact release artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ${{ steps.pack.outputs.artifact_name }}
+          path: release-artifacts/*
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish or verify an identical rerun
+        run: >-
+          node scripts/publish-release.mjs
+          "${{ steps.pack.outputs.tarball }}"
+          "${{ steps.verify.outputs.name }}"
+          "${{ steps.verify.outputs.version }}"
+          "${{ steps.pack.outputs.shasum }}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

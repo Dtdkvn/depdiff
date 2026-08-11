@@ -10,8 +10,11 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) conventi
 - prevented archive-root/default-ignore, oversized-manifest, changed-binary, and baseline-fingerprint false negatives;
 - validated redirects before requests, streamed registry metadata through its cap, and hardened strongest-digest verification;
 - corrected workspace-aware SARIF/annotation paths, CLI exit codes, report sanitization, and concurrent output writes;
-- pinned CI/container supply-chain inputs and added Action/distribution regression coverage.
-- moved final containers to supported Node 24, upgraded Alpine packages, and removed unused global package-manager toolchains from runtime images.
+- pinned CI/container supply-chain inputs and added Action/distribution regression coverage;
+- moved final containers to supported Node 24, upgraded Alpine packages, and removed unused global package-manager toolchains from runtime images;
+- dropped Node 20, with maintained Node 22/24 CI coverage and Node 24 package/release defaults;
+- made tagged releases prove main-branch ancestry, pack once, publish the verified tarball, and fail closed on registry shasum mismatches;
+- shipped linked documentation, assets, and examples in the npm tarball with installed-package and local-link smoke tests.
 
 ## [0.1.0] - 2026-08-11
 
@@ -24,5 +27,5 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) conventi
 - standalone interactive HTML, deterministic JSON, SARIF 2.1.0, and Markdown reports;
 - Docker/Compose workflow, Docker GitHub Action, CI/release workflows, fixtures, tests, and security documentation.
 
-[Unreleased]: https://github.com/depdiff/depdiff/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/depdiff/depdiff/releases/tag/v0.1.0
+[Unreleased]: https://github.com/yewud/depdiff/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/yewud/depdiff/releases/tag/v0.1.0

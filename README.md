@@ -2,10 +2,10 @@
   <h1>Depdiff</h1>
   <p><strong>See what an npm update can do now that it could not do before.</strong></p>
   <p>
-    <a href="https://github.com/depdiff/depdiff/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/depdiff/depdiff/actions/workflows/ci.yml/badge.svg"></a>
+    <a href="https://github.com/yewud/depdiff/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/yewud/depdiff/actions/workflows/ci.yml/badge.svg"></a>
     <a href="https://www.npmjs.com/package/depdiff-audit"><img alt="npm" src="https://img.shields.io/npm/v/depdiff-audit?color=60f0b2"></a>
     <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-60f0b2"></a>
-    <a href="https://nodejs.org"><img alt="Node 20+" src="https://img.shields.io/badge/node-%3E%3D20.12-60f0b2"></a>
+    <a href="https://nodejs.org"><img alt="Node 22+" src="https://img.shields.io/badge/node-%3E%3D22-60f0b2"></a>
   </p>
 </div>
 
@@ -110,7 +110,7 @@ includeBaseline: false
 ```yaml
 - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 - name: Audit the candidate update
-  uses: depdiff/depdiff@8190e07ef655c5aba2c072c16e915b67334cbabe # reviewed v0.1 implementation
+  uses: yewud/depdiff@8190e07ef655c5aba2c072c16e915b67334cbabe # reviewed v0.1 implementation
   with:
     before: package-name@1.4.0
     after: package-name@1.5.0
@@ -170,4 +170,4 @@ npm run check
 npm run demo
 ```
 
-Node.js 20.12+ is supported. Contributions are welcome—start with [CONTRIBUTING.md](CONTRIBUTING.md). Depdiff is MIT-licensed.
+Node.js 22+ is supported; Node 24 is the default development and release runtime. Contributions are welcome—start with [CONTRIBUTING.md](CONTRIBUTING.md). Depdiff is MIT-licensed.

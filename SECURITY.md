@@ -8,7 +8,7 @@ Until 1.0, only the latest tagged release receives security fixes. After 1.0, th
 
 ## Reporting a vulnerability
 
-Please use GitHub's **Security → Report a vulnerability** private advisory flow for `depdiff/depdiff`. Do not open a public issue with exploit details.
+Please use the [GitHub **Security → Report a vulnerability** private advisory flow](https://github.com/yewud/depdiff/security/advisories/new). Do not open a public issue with exploit details.
 
 Include:
 
