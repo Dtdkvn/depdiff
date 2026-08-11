@@ -7,7 +7,7 @@ import pc from 'picocolors';
 import { audit } from './audit.js';
 import { DEFAULT_LIMITS, VERSION } from './constants.js';
 import { POLICY_TEMPLATE, writeBaseline } from './policy.js';
-import { renderHtml, renderJson, renderMarkdown, renderSarif } from './reports.js';
+import { renderHtml, renderJson, renderMarkdown, renderSarif, resolveWorkspaceEvidencePath } from './reports.js';
 import type { DiffReport, Severity } from './types.js';
 import { errorMessage, UserError, writeTextFile } from './util.js';
 
@@ -43,6 +43,7 @@ export async function runCli(argv = process.argv): Promise<number> {
     .name('depdiff')
     .description('See what an npm update can do now that it could not do before.')
     .version(VERSION)
+    .exitOverride()
     .showHelpAfterError()
     .configureOutput({ outputError: (value, write) => write(pc.red(value)) });
 
@@ -69,16 +70,12 @@ export async function runCli(argv = process.argv): Promise<number> {
     .argument('[file]', 'policy path', '.depdiff.yml')
     .option('-f, --force', 'overwrite an existing file', false)
     .action(async (file: string, options: { force: boolean }) => {
-      const { access } = await import('node:fs/promises');
-      if (!options.force) {
-        try {
-          await access(file);
-          throw new UserError(`${file} already exists; pass --force to replace it.`);
-        } catch (error) {
-          if (error instanceof UserError) throw error;
-        }
+      try {
+        await writeTextFile(file, POLICY_TEMPLATE, { overwrite: options.force });
+      } catch (error) {
+        if (!options.force && isErrno(error, 'EEXIST')) throw new UserError(`${file} already exists; pass --force to replace it.`);
+        throw error;
       }
-      await writeTextFile(file, POLICY_TEMPLATE);
       process.stdout.write(`${pc.green('✓')} Wrote ${path.resolve(file)}\n`);
     });
 
@@ -91,7 +88,7 @@ export async function runCli(argv = process.argv): Promise<number> {
       process.stderr.write(`${pc.red('depdiff:')} ${error.message}\n`);
       return error.exitCode;
     }
-    if (isCommanderExit(error)) return error.exitCode;
+    if (isCommanderExit(error)) return error.exitCode === 0 ? 0 : 2;
     process.stderr.write(`${pc.red('depdiff internal error:')} ${errorMessage(error)}\n`);
     if (process.env.DEBUG) process.stderr.write(`${error instanceof Error ? error.stack ?? '' : ''}\n`);
     return 3;
@@ -115,7 +112,7 @@ function addCompareOptions(command: Command): Command {
     .option('--write-baseline <file>', 'write current findings as a baseline')
     .option('--registry <url>', 'trusted npm registry origin', 'https://registry.npmjs.org/')
     .option('--cache-dir <path>', 'verified tarball cache', '.depdiff-cache')
-    .option('--ignore <glob>', 'additional local-file ignore glob', collect, [])
+    .option('--ignore <glob>', 'path ignore glob for every source kind', collect, [])
     .option('--max-files <count>', 'maximum files/entries', integerOption, DEFAULT_LIMITS.maxFiles)
     .option('--max-total-bytes <bytes>', 'maximum unpacked bytes', integerOption, DEFAULT_LIMITS.maxTotalBytes)
     .option('--max-file-bytes <bytes>', 'maximum bytes in one file', integerOption, DEFAULT_LIMITS.maxFileBytes)
@@ -126,6 +123,7 @@ function addCompareOptions(command: Command): Command {
 }
 
 async function compare(before: string, after: string, options: CompareOptions): Promise<number> {
+  assertDistinctOutputs(options);
   const report = await audit(before, after, {
     offline: options.offline,
     deterministic: options.deterministic,
@@ -146,18 +144,19 @@ async function compare(before: string, after: string, options: CompareOptions): 
     },
   });
   const outputs: Array<Promise<void>> = [];
+  const workspace = process.env.GITHUB_WORKSPACE ?? process.cwd();
   if (options.output) outputs.push(writeTextFile(options.output, renderHtml(report)));
   if (options.json) outputs.push(writeTextFile(options.json, renderJson(report)));
   if (options.markdown) outputs.push(writeTextFile(options.markdown, renderMarkdown(report)));
-  if (options.sarif) outputs.push(writeTextFile(options.sarif, renderSarif(report)));
+  if (options.sarif) outputs.push(writeTextFile(options.sarif, renderSarif(report, { workspace })));
   if (options.writeBaseline) outputs.push(writeBaseline(options.writeBaseline, report));
   await Promise.all(outputs);
 
-  if (options.ci) emitAnnotations(report);
+  if (options.ci) emitAnnotations(report, workspace);
   if (!options.quiet) {
     if (options.stdout === 'json') process.stdout.write(renderJson(report));
     else if (options.stdout === 'markdown') process.stdout.write(renderMarkdown(report));
-    else if (options.stdout === 'sarif') process.stdout.write(renderSarif(report));
+    else if (options.stdout === 'sarif') process.stdout.write(renderSarif(report, { workspace }));
     else printSummary(report, options);
   }
   return !report.policy.passed && options.fail ? 1 : 0;
@@ -167,12 +166,12 @@ function printSummary(report: DiffReport, options: CompareOptions): void {
   const riskColor = report.risk.level === 'critical' || report.risk.level === 'high'
     ? pc.red : report.risk.level === 'medium' ? pc.yellow : pc.green;
   process.stdout.write(`\n${pc.bold('DE P DIFF')}  ${pc.dim('static update audit')}\n\n`);
-  process.stdout.write(`  ${pc.bold(report.before.package.name)}  ${report.before.package.version} ${pc.dim('→')} ${report.after.package.version}\n`);
+  process.stdout.write(`  ${pc.bold(terminalText(report.before.package.name))}  ${terminalText(report.before.package.version)} ${pc.dim('→')} ${terminalText(report.after.package.version)}\n`);
   process.stdout.write(`  Risk ${riskColor(pc.bold(`${report.risk.score}/100 ${report.risk.level.toUpperCase()}`))}  ·  ${report.risk.newFindings} new finding(s)\n`);
   process.stdout.write(`  Files ${pc.green(`+${report.inventory.added.length}`)} ${pc.red(`−${report.inventory.removed.length}`)} ${pc.yellow(`~${report.inventory.modified.length}`)}  ·  package code executed: ${pc.green('no')}\n\n`);
   for (const finding of report.findings.filter((item) => item.status === 'new').slice(0, 8)) {
     const color = finding.severity === 'critical' || finding.severity === 'high' ? pc.red : finding.severity === 'medium' ? pc.yellow : pc.cyan;
-    process.stdout.write(`  ${color(finding.severity.toUpperCase().padEnd(8))} ${finding.title}${finding.evidence[0]?.file ? pc.dim(` · ${finding.evidence[0].file}`) : ''}\n`);
+    process.stdout.write(`  ${color(finding.severity.toUpperCase().padEnd(8))} ${terminalText(finding.title)}${finding.evidence[0]?.file ? pc.dim(` · ${terminalText(finding.evidence[0].file)}`) : ''}\n`);
   }
   if (report.risk.newFindings > 8) process.stdout.write(pc.dim(`  … ${report.risk.newFindings - 8} more in the report\n`));
   process.stdout.write(`\n  Policy ${report.policy.passed ? pc.green(pc.bold('PASS')) : pc.red(pc.bold('FAIL'))}`);
@@ -184,17 +183,55 @@ function printSummary(report: DiffReport, options: CompareOptions): void {
   process.stdout.write('\n');
 }
 
-function emitAnnotations(report: DiffReport): void {
+function emitAnnotations(report: DiffReport, workspace: string): void {
   for (const finding of report.findings.filter((item) => item.status === 'new' && ['critical', 'high', 'medium'].includes(item.severity))) {
     const evidence = finding.evidence[0];
     const kind = finding.severity === 'medium' ? 'warning' : 'error';
-    const metadata = [evidence?.file ? `file=${escapeWorkflow(evidence.file)}` : '', evidence?.line ? `line=${evidence.line}` : '', `title=${escapeWorkflow(`Depdiff ${finding.severity}`)}`].filter(Boolean).join(',');
+    const evidencePath = evidence?.file ? resolveWorkspaceEvidencePath(report, evidence.file, workspace) : undefined;
+    const metadata = [evidencePath ? `file=${escapeWorkflow(evidencePath)}` : '', evidencePath && evidence?.line ? `line=${evidence.line}` : '', `title=${escapeWorkflow(`Depdiff ${finding.severity}`)}`].filter(Boolean).join(',');
     process.stdout.write(`::${kind} ${metadata}::${escapeWorkflow(`${finding.title} — ${finding.description}`)}\n`);
   }
 }
 
 function escapeWorkflow(value: string): string {
-  return value.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A').replaceAll(':', '%3A').replaceAll(',', '%2C');
+  return terminalText(value).replaceAll('%', '%25').replaceAll(':', '%3A').replaceAll(',', '%2C');
+}
+
+function terminalText(value: string): string {
+  return value
+    .replace(ANSI_ESCAPE_PATTERN, '')
+    .replace(/\r\n?|\n/g, ' ')
+    .replace(CONTROL_CHARACTER_PATTERN, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+// Intentional terminal-control sanitizers.
+// eslint-disable-next-line no-control-regex
+const ANSI_ESCAPE_PATTERN = new RegExp('\\u001b(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\u0007]*(?:\\u0007|\\u001b\\\\))', 'g');
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTER_PATTERN = new RegExp('[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f]', 'g');
+
+function assertDistinctOutputs(options: CompareOptions): void {
+  const targets = [
+    ['HTML', options.output],
+    ['JSON', options.json],
+    ['Markdown', options.markdown],
+    ['SARIF', options.sarif],
+    ['baseline', options.writeBaseline],
+  ].filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].length > 0);
+  const seen = new Map<string, string>();
+  for (const [label, file] of targets) {
+    const resolved = path.resolve(file);
+    const key = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    const previous = seen.get(key);
+    if (previous) throw new UserError(`${label} output collides with ${previous} output: ${resolved}`);
+    seen.set(key, label);
+  }
+}
+
+function isErrno(error: unknown, code: string): boolean {
+  return Boolean(error && typeof error === 'object' && 'code' in error && error.code === code);
 }
 
 function integerOption(value: string): number {

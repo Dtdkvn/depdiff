@@ -1,10 +1,11 @@
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import * as tar from 'tar';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { audit } from '../src/audit.js';
 import { assertSafeArchivePath, __test } from '../src/source.js';
 
@@ -13,6 +14,7 @@ const safe = path.join(projectRoot, 'fixtures', 'safe-v1');
 const temporaryPaths: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await Promise.all(temporaryPaths.splice(0).map((target) => rm(target, { recursive: true, force: true })));
 });
 
@@ -83,6 +85,110 @@ describe('secure source loading', () => {
     const archive = path.join(root, 'ratio.tgz');
     await writeFile(archive, makeSingleEntryTar('package/zeros.bin', '0', '', Buffer.alloc(128 * 1024)));
     await expect(audit(safe, archive, { offline: true, limits: { maxCompressionRatio: 1 } })).rejects.toThrow(/decompression ratio exceeded/);
+  });
+
+  it('rejects mixed-root npm archives instead of silently dropping sibling payloads', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'depdiff-mixed-root-'));
+    temporaryPaths.push(root);
+    await mkdir(path.join(root, 'package'), { recursive: true });
+    await mkdir(path.join(root, 'other'), { recursive: true });
+    await writeFile(path.join(root, 'package', 'package.json'), JSON.stringify({ name: 'mixed-root', version: '1.0.0' }));
+    await writeFile(path.join(root, 'other', 'payload.js'), "require('node:child_process').exec(process.env.CMD)");
+    const archive = path.join(root, 'mixed.tgz');
+    await tar.create({ gzip: true, file: archive, cwd: root, portable: true }, ['package', 'other']);
+    await expect(audit(safe, archive, { offline: true })).rejects.toThrow(/outside its canonical package\/ root/);
+  });
+
+  it('analyzes bundled dependency payloads shipped under node_modules in archives', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'depdiff-bundled-'));
+    temporaryPaths.push(root);
+    const beforeRoot = path.join(root, 'before');
+    const afterRoot = path.join(root, 'after');
+    for (const [directory, version, code] of [
+      [beforeRoot, '1.0.0', 'export const ok = true;'],
+      [afterRoot, '1.1.0', "require('node:child_process').exec(process.env.CMD)"],
+    ] as const) {
+      await mkdir(path.join(directory, 'package', 'node_modules', 'bundled-risk'), { recursive: true });
+      await writeFile(path.join(directory, 'package', 'package.json'), JSON.stringify({
+        name: 'bundled-host', version, dependencies: { 'bundled-risk': '1.0.0' }, bundledDependencies: ['bundled-risk'],
+      }));
+      await writeFile(path.join(directory, 'package', 'node_modules', 'bundled-risk', 'index.js'), code);
+    }
+    const beforeArchive = path.join(root, 'before.tgz');
+    const afterArchive = path.join(root, 'after.tgz');
+    await tar.create({ gzip: true, file: beforeArchive, cwd: beforeRoot, portable: true }, ['package']);
+    await tar.create({ gzip: true, file: afterArchive, cwd: afterRoot, portable: true }, ['package']);
+    const report = await audit(beforeArchive, afterArchive, { offline: true });
+    expect(report.inventory.modified.map((change) => change.after.path)).toContain('node_modules/bundled-risk/index.js');
+    expect(report.findings.map((finding) => finding.id)).toContain('capability.added.child_process');
+  });
+
+  it('fails closed when package.json exceeds the parsed manifest limit', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'depdiff-large-manifest-'));
+    temporaryPaths.push(root);
+    await writeFile(path.join(root, 'package.json'), JSON.stringify({
+      name: 'large-manifest', version: '1.0.0', scripts: { postinstall: 'node steal.js' }, padding: 'x'.repeat(512),
+    }));
+    await expect(audit(safe, root, { offline: true, limits: { maxTextBytes: 128 } })).rejects.toThrow(/parsed manifest limit/);
+  });
+
+  it('validates every redirect before issuing the next request', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn((input: URL | Request) => {
+      calls.push(input instanceof URL ? input.toString() : input.url);
+      return Promise.resolve(new Response(null, { status: 302, headers: { location: 'https://untrusted.example/payload' } }));
+    }));
+    await expect(__test.fetchWithTimeout(
+      new URL('https://registry.example/package'), 'registry.example', 1_000, 'registry metadata',
+    )).rejects.toThrow(/Untrusted redirect/);
+    expect(calls).toEqual(['https://registry.example/package']);
+  });
+
+  it('follows a bounded relative redirect on the configured origin', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn((input: URL | Request) => {
+      const url = input instanceof URL ? input.toString() : input.url;
+      calls.push(url);
+      return Promise.resolve(calls.length === 1
+        ? new Response(null, { status: 302, headers: { location: '/metadata/final' } })
+        : new Response('{}', { status: 200 }));
+    }));
+    const response = await __test.fetchWithTimeout(
+      new URL('https://registry.example/package'), 'registry.example', 1_000, 'registry metadata',
+    );
+    expect(response.status).toBe(200);
+    expect(calls).toEqual(['https://registry.example/package', 'https://registry.example/metadata/final']);
+  });
+
+  it('aborts chunked registry metadata before buffering beyond 16 MiB', async () => {
+    let cancelled = false;
+    const chunks = [Buffer.alloc(8 * 1024 * 1024), Buffer.alloc(8 * 1024 * 1024), Buffer.alloc(1)];
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const chunk = chunks.shift();
+        if (chunk) controller.enqueue(chunk);
+        else controller.close();
+      },
+      cancel() { cancelled = true; },
+    });
+    await expect(__test.readRegistryDocument(new Response(body))).rejects.toThrow(/16 MiB limit/);
+    expect(cancelled).toBe(true);
+  });
+
+  it('rejects unsupported SRI and verifies the strongest supported digest', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'depdiff-integrity-'));
+    temporaryPaths.push(root);
+    const archive = path.join(root, 'payload.tgz');
+    const payload = Buffer.from('verified bytes');
+    await writeFile(archive, payload);
+    const sha256 = createHash('sha256').update(payload).digest('base64');
+    const sha512 = createHash('sha512').update(payload).digest('base64');
+    await expect(__test.verifyArchiveDigest(archive, 'sha1-ZGVhZGJlZWY=')).rejects.toThrow(/no supported/);
+    await expect(__test.verifyArchiveDigest(archive, '')).rejects.toThrow(/empty after whitespace/);
+    await expect(__test.verifyArchiveDigest(archive, '   ')).rejects.toThrow(/empty after whitespace/);
+    await expect(__test.verifyArchiveDigest(archive, `sha256-${sha256} sha512-!!!`)).rejects.toThrow(/malformed sha512/);
+    await expect(__test.verifyArchiveDigest(archive, `sha256-${sha256} sha512-AAAA`)).rejects.toThrow(/sha512/);
+    await expect(__test.verifyArchiveDigest(archive, `sha256-AAAA sha512-${sha512}`)).resolves.toBeUndefined();
   });
 });
 

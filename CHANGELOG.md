@@ -4,6 +4,14 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) conventi
 
 ## [Unreleased]
 
+### Fixed
+
+- made the Docker Action conform to GitHub's Dockerfile/input contract and preserve policy thresholds;
+- prevented archive-root/default-ignore, oversized-manifest, changed-binary, and baseline-fingerprint false negatives;
+- validated redirects before requests, streamed registry metadata through its cap, and hardened strongest-digest verification;
+- corrected workspace-aware SARIF/annotation paths, CLI exit codes, report sanitization, and concurrent output writes;
+- pinned CI/container supply-chain inputs and added Action/distribution regression coverage.
+
 ## [0.1.0] - 2026-08-11
 
 ### Added

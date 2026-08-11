@@ -116,7 +116,7 @@ export function analyzeDiff(before: LoadedPackage, after: LoadedPackage, options
   const afterProfile = profilePackage(after);
   const drafts: FindingDraft[] = [];
 
-  drafts.push(...capabilityFindings(beforeProfile, afterProfile));
+  drafts.push(...capabilityFindings(beforeProfile, afterProfile, after));
   drafts.push(...domainFindings(beforeProfile, afterProfile));
   drafts.push(...installScriptFindings(metadata));
   drafts.push(...dependencyFindings(metadata));
@@ -127,7 +127,7 @@ export function analyzeDiff(before: LoadedPackage, after: LoadedPackage, options
   if (afterProfile.parseFailures.length > beforeProfile.parseFailures.length) {
     drafts.push({
       id: 'analysis.new-parse-failures',
-      identity: 'analysis.new-parse-failures',
+      identity: `analysis.new-parse-failures:${evidenceFileIdentity(afterProfile.parseFailures, after)}`,
       title: 'New source files could not be parsed',
       description: 'Static AST analysis fell back to lexical checks for some new or changed code.',
       category: 'obfuscation',
@@ -381,7 +381,7 @@ function walkAst(value: unknown, visitor: (node: Record<string, unknown>) => voi
   }
 }
 
-function capabilityFindings(before: StaticProfile, after: StaticProfile): FindingDraft[] {
+function capabilityFindings(before: StaticProfile, after: StaticProfile, candidate: LoadedPackage): FindingDraft[] {
   const previous = new Set(before.signals.map((signal) => signal.capability));
   const additions = [...new Set(after.signals.map((signal) => signal.capability))].filter((capability) => !previous.has(capability));
   return additions.map((capability) => {
@@ -389,9 +389,13 @@ function capabilityFindings(before: StaticProfile, after: StaticProfile): Findin
       severity: 'medium' as const, score: 8, title: `New ${capability} capability`, remediation: 'Review this newly introduced capability.',
     };
     const matching = after.signals.filter((signal) => signal.capability === capability);
+    const semanticFiles = [...new Set(matching.map((signal) => {
+      const digest = candidate.files.get(signal.file)?.sha256 ?? sha256(`${signal.message}\0${signal.snippet ?? ''}`);
+      return `${signal.file}:${digest}`;
+    }))].sort();
     return {
       id: `capability.added.${capability}`,
-      identity: `capability:${capability}:${[...new Set(matching.map((signal) => signal.file))].sort().join(',')}`,
+      identity: `capability:${capability}:${semanticFiles.join(',')}`,
       title: risk.title,
       description: `The updated package introduces the ${capability} capability, which was not detected in the previous version.`,
       category: matching[0]?.category ?? 'execution',
@@ -489,11 +493,30 @@ function inventoryFindings(
       tags: ['binary', ...(native ? ['native'] : [])],
     });
   }
+  const changedBinaries = inventory.modified.filter(({ after: file }) => file.kind === 'binary' || BINARY_EXTENSIONS.has(path.extname(file.path).toLowerCase()));
+  if (changedBinaries.length > 0) {
+    const native = changedBinaries.some(({ after: file }) => ['.node', '.dll', '.so', '.dylib', '.exe'].includes(path.extname(file.path).toLowerCase()));
+    drafts.push({
+      id: native ? 'binary.native.changed' : 'binary.changed',
+      identity: `changed-binaries:${changedBinaries.map(({ before: previous, after: next }) => `${next.path}:${previous.sha256}:${next.sha256}`).join(',')}`,
+      title: `${changedBinaries.length} ${native ? 'native ' : ''}binary file${changedBinaries.length === 1 ? '' : 's'} changed`,
+      description: 'Previously shipped binary payloads changed bytes or changed from reviewable text into binary data.',
+      category: 'binary',
+      severity: native ? 'high' : 'medium',
+      score: native ? 22 : 10,
+      evidence: changedBinaries.slice(0, 12).map(({ before: previous, after: next }) => ({
+        file: next.path,
+        message: `sha256 ${previous.sha256.slice(0, 16)}… → ${next.sha256.slice(0, 16)}…`,
+      })),
+      remediation: 'Rebuild the changed binaries from reviewed source and verify their checksums, signatures, and loading paths.',
+      tags: ['binary', 'changed', ...(native ? ['native'] : [])],
+    });
+  }
   const executables = inventory.added.filter((file) => file.kind !== 'binary' && (file.mode & 0o111) !== 0);
   if (executables.length > 0) {
     drafts.push({
       id: 'files.executable.added',
-      identity: `executables:${executables.map((file) => file.path).join(',')}`,
+      identity: `executables:${executables.map((file) => `${file.path}:${file.sha256}:${file.mode}`).join(',')}`,
       title: `${executables.length} new executable file${executables.length === 1 ? '' : 's'}`,
       description: 'The update ships new files marked executable.',
       category: 'execution',
@@ -504,10 +527,28 @@ function inventoryFindings(
       tags: ['executable', 'inventory'],
     });
   }
+  const executableTransitions = inventory.modified.filter(({ before: previous, after: next }) =>
+    next.kind !== 'binary' && (previous.mode & 0o111) === 0 && (next.mode & 0o111) !== 0,
+  );
+  if (executableTransitions.length > 0) {
+    drafts.push({
+      id: 'files.executable.changed',
+      identity: `changed-executables:${executableTransitions.map(({ before: previous, after: next }) => `${next.path}:${previous.mode}:${next.mode}:${next.sha256}`).join(',')}`,
+      title: `${executableTransitions.length} existing file${executableTransitions.length === 1 ? '' : 's'} became executable`,
+      description: 'The update added executable permission bits to files that were previously non-executable.',
+      category: 'execution', severity: 'medium', score: Math.min(15, 8 + executableTransitions.length),
+      evidence: executableTransitions.slice(0, 12).map(({ before: previous, after: next }) => ({
+        file: next.path,
+        message: `Mode ${(previous.mode & 0o777).toString(8)} → ${(next.mode & 0o777).toString(8)}`,
+      })),
+      remediation: 'Confirm why each existing file became executable and inspect every invocation path.',
+      tags: ['executable', 'inventory', 'changed'],
+    });
+  }
   const links = inventory.added.filter((file) => file.kind === 'symlink');
   if (links.length > 0) {
     drafts.push({
-      id: 'files.symlink.added', identity: `symlinks:${links.map((file) => file.path).join(',')}`,
+      id: 'files.symlink.added', identity: `symlinks:${links.map((file) => `${file.path}:${file.sha256}`).join(',')}`,
       title: `${links.length} new symbolic link${links.length === 1 ? '' : 's'}`,
       description: 'Local directory input contains new symlinks. Depdiff records but never follows them.',
       category: 'inventory', severity: 'medium', score: 8,
@@ -515,10 +556,27 @@ function inventoryFindings(
       remediation: 'Verify every link target and ensure packaging does not redirect consumers outside the package root.', tags: ['symlink'],
     });
   }
+  const changedLinks = inventory.modified.filter(({ before: previous, after: next }) =>
+    next.kind === 'symlink' && (previous.kind !== 'symlink' || previous.sha256 !== next.sha256),
+  );
+  if (changedLinks.length > 0) {
+    drafts.push({
+      id: 'files.symlink.changed', identity: `changed-symlinks:${changedLinks.map(({ before: previous, after: next }) => `${next.path}:${previous.sha256}:${next.sha256}`).join(',')}`,
+      title: `${changedLinks.length} symbolic link${changedLinks.length === 1 ? '' : 's'} changed`,
+      description: 'Local directory input contains symlinks whose targets or file kind changed.',
+      category: 'inventory', severity: 'medium', score: 8,
+      evidence: changedLinks.slice(0, 12).map(({ before: previous, after: next }) => ({
+        file: next.path,
+        message: `Link fingerprint ${previous.sha256.slice(0, 16)}… → ${next.sha256.slice(0, 16)}…`,
+      })),
+      remediation: 'Verify each changed link target and ensure packaging cannot redirect consumers outside the package root.',
+      tags: ['symlink', 'changed'],
+    });
+  }
   const delta = after.snapshot.totalBytes - before.snapshot.totalBytes;
   if (delta > Math.max(1_000_000, before.snapshot.totalBytes * 1.5)) {
     drafts.push({
-      id: 'inventory.size.spike', identity: `size-spike:${Math.round(delta / 100_000)}`,
+      id: 'inventory.size.spike', identity: `size-spike:${before.snapshot.totalBytes}:${after.snapshot.totalBytes}`,
       title: 'Package size increased sharply',
       description: `The unpacked package grew by ${delta.toLocaleString('en-US')} bytes.`,
       category: 'inventory', severity: 'medium', score: 8,
@@ -565,19 +623,19 @@ function obfuscationFindings(before: LoadedPackage, after: LoadedPackage, invent
   }
   const drafts: FindingDraft[] = [];
   if (encoded.length > 0) drafts.push({
-    id: 'obfuscation.encoded-payload', identity: `encoded:${encoded.map((entry) => entry.file).join(',')}`,
+    id: 'obfuscation.encoded-payload', identity: `encoded:${evidenceFileIdentity(encoded, after)}`,
     title: 'High-entropy encoded payload added', description: 'New or changed files contain unusually long Base64/hex-like blobs.',
     category: 'obfuscation', severity: 'high', score: 20, evidence: encoded.slice(0, 10),
     remediation: 'Decode the payload in an isolated review environment, identify its generator, and compare it with reproducible source.', tags: ['entropy', 'encoded'],
   });
   if (entropySpikes.length > 0) drafts.push({
-    id: 'obfuscation.entropy-spike', identity: `entropy:${entropySpikes.map((entry) => entry.file).join(',')}`,
+    id: 'obfuscation.entropy-spike', identity: `entropy:${evidenceFileIdentity(entropySpikes, after)}`,
     title: 'File entropy increased sharply', description: 'Changed files became substantially less human-readable.', category: 'obfuscation',
     severity: 'medium', score: 10, evidence: entropySpikes.slice(0, 10),
     remediation: 'Compare generated artifacts with their source and reproduce the build before trusting the update.', tags: ['entropy'],
   });
   if (minified.length > 0 || generated.length > 0) drafts.push({
-    id: 'payload.generated.added', identity: `generated:${[...minified, ...generated].map((entry) => entry.file).join(',')}`,
+    id: 'payload.generated.added', identity: `generated:${evidenceFileIdentity([...minified, ...generated], after)}`,
     title: 'New or changed generated payload', description: 'Dense, generated, or unusually large code reduces the usefulness of normal human review.', category: 'obfuscation',
     severity: generated.length > 0 ? 'medium' : 'low', score: generated.length > 0 ? 10 : 4, evidence: [...minified, ...generated].slice(0, 12),
     remediation: 'Prefer source distributions, validate source maps, and reproduce the published bundle from the tagged source.', tags: ['minified', 'generated'],
@@ -685,6 +743,13 @@ function deduplicateFindings(drafts: FindingDraft[], packageName: string): Findi
     if (!unique.has(fingerprint)) unique.set(fingerprint, { ...draft, fingerprint, status: 'new' });
   }
   return [...unique.values()];
+}
+
+function evidenceFileIdentity(evidence: Evidence[], pkg: LoadedPackage): string {
+  return [...new Set(evidence.map((entry) => {
+    const digest = entry.file ? pkg.files.get(entry.file)?.sha256 : undefined;
+    return `${entry.file ?? '(global)'}:${digest ?? sha256(`${entry.message}\0${entry.snippet ?? ''}`)}`;
+  }))].sort().join(',');
 }
 
 function compareFinding(a: Finding, b: Finding): number {

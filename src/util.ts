@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { link, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Severity } from './types.js';
 
@@ -32,9 +32,26 @@ function sortValue(value: unknown): unknown {
   return value;
 }
 
-export async function writeTextFile(filePath: string, content: string): Promise<void> {
-  await mkdir(path.dirname(path.resolve(filePath)), { recursive: true });
-  await writeFile(filePath, content, 'utf8');
+export async function writeTextFile(
+  filePath: string,
+  content: string,
+  options: { overwrite?: boolean } = {},
+): Promise<void> {
+  const destination = path.resolve(filePath);
+  await mkdir(path.dirname(destination), { recursive: true });
+  const temporary = path.join(path.dirname(destination), `.${path.basename(destination)}.${process.pid}.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporary, content, { encoding: 'utf8', flag: 'wx' });
+    if (options.overwrite === false) {
+      await link(temporary, destination);
+      await rm(temporary, { force: true });
+    } else {
+      await rename(temporary, destination);
+    }
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
 }
 
 export function severityRank(severity: Severity | 'never'): number {

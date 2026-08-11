@@ -1,6 +1,6 @@
 # Project progress
 
-Last updated: 2026-08-11
+Last updated: 2026-08-12
 
 ## Decisions
 
@@ -10,6 +10,8 @@ Last updated: 2026-08-11
 - Parser: Babel's JavaScript/TypeScript parser instead of native tree-sitter bindings for a portable one-command npm/Docker install. Lexical fallbacks preserve partial coverage for parser-resistant input.
 - Registry security: tarball host must match configured registry host. Cross-host private-registry blobs are a documented v0.1 limitation; local tarballs are the workaround.
 - Risk score: capped review-priority score, explicitly not a malware probability.
+- Archive snapshots: scan all shipped tarball paths, while ergonomic default ignores remain limited to local working directories.
+- CI distribution: Docker Action inputs are explicit, third-party Actions/base images are immutable, and release tags must match `package.json`.
 
 ## v0.1 status
 

@@ -19,7 +19,7 @@ inputs:
     required: false
   fail-on:
     description: Severity threshold (info, low, medium, high, critical, never).
-    default: high
+    required: false
   report:
     description: Standalone HTML report output path.
     default: depdiff-report.html
@@ -35,7 +35,16 @@ outputs:
   sarif:
     description: Absolute path to the SARIF report.
   risk_exit_code:
-    description: Depdiff exit code (0 pass, 1 policy violation).
+    description: Depdiff exit code (0 pass, 1 policy violation, 2 input error, 3 internal error).
 runs:
   using: docker
-  image: Dockerfile.action
+  image: action/Dockerfile
+  args:
+    - ${{ inputs.before }}
+    - ${{ inputs.after }}
+    - ${{ inputs.policy }}
+    - ${{ inputs.baseline }}
+    - ${{ inputs['fail-on'] }}
+    - ${{ inputs.report }}
+    - ${{ inputs.sarif }}
+    - ${{ inputs.offline }}

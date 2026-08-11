@@ -1,5 +1,10 @@
+import path from 'node:path';
 import type { DiffReport, Evidence, Finding, Severity } from './types.js';
 import { byteSize, stableStringify } from './util.js';
+
+export interface ReportRenderOptions {
+  workspace?: string;
+}
 
 export function renderJson(report: DiffReport): string {
   return `${stableStringify(report)}\n`;
@@ -58,7 +63,7 @@ export function renderMarkdown(report: DiffReport): string {
   return `${lines.join('\n')}\n`;
 }
 
-export function renderSarif(report: DiffReport): string {
+export function renderSarif(report: DiffReport, options: ReportRenderOptions = {}): string {
   const rules = [...new Map(report.findings.map((finding) => [finding.id, finding])).values()].map((finding) => ({
     id: finding.id,
     name: sarifName(finding.id),
@@ -67,25 +72,31 @@ export function renderSarif(report: DiffReport): string {
     help: { text: finding.remediation },
     properties: { category: finding.category, tags: finding.tags, defaultSeverity: finding.severity },
   }));
-  const results = report.findings.map((finding) => ({
-    ruleId: finding.id,
-    level: sarifLevel(finding.severity),
-    message: { text: `${finding.title}: ${finding.description}` },
-    ...(finding.evidence[0]?.file ? {
-      locations: [{ physicalLocation: {
-        artifactLocation: { uri: finding.evidence[0].file.replaceAll('\\', '/') },
-        ...(finding.evidence[0].line ? { region: { startLine: finding.evidence[0].line } } : {}),
-      } }],
-    } : {}),
-    partialFingerprints: { depdiffFingerprint: finding.fingerprint },
-    baselineState: finding.status === 'baseline' ? 'unchanged' : 'new',
-    properties: {
-      score: finding.score,
-      severity: finding.severity,
-      category: finding.category,
-      evidence: finding.evidence,
-    },
-  }));
+  const results = report.findings.map((finding) => {
+    const firstEvidence = finding.evidence[0];
+    const evidencePath = firstEvidence?.file
+      ? resolveWorkspaceEvidencePath(report, firstEvidence.file, options.workspace)
+      : undefined;
+    return {
+      ruleId: finding.id,
+      level: sarifLevel(finding.severity),
+      message: { text: `${finding.title}: ${finding.description}` },
+      ...(evidencePath ? {
+        locations: [{ physicalLocation: {
+          artifactLocation: { uri: evidencePath.split('/').map((segment) => encodeURIComponent(segment)).join('/') },
+          ...(firstEvidence?.line ? { region: { startLine: firstEvidence.line } } : {}),
+        } }],
+      } : {}),
+      partialFingerprints: { depdiffFingerprint: finding.fingerprint },
+      baselineState: finding.status === 'baseline' ? 'unchanged' : 'new',
+      properties: {
+        score: finding.score,
+        severity: finding.severity,
+        category: finding.category,
+        evidence: finding.evidence,
+      },
+    };
+  });
   const sarif = {
     version: '2.1.0',
     $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
@@ -177,7 +188,7 @@ function escapeHtml(value: string): string {
 }
 
 function escapeMarkdown(value: string): string {
-  return value.replace(/([\\`*_[\]<>|])/g, '\\$1');
+  return sanitizeSingleLine(value).replace(/([\\`*_[\]<>|#])/g, '\\$1');
 }
 
 function formatMarkdownEvidence(evidence: Evidence): string {
@@ -200,6 +211,34 @@ function sarifLevel(severity: Severity): 'error' | 'warning' | 'note' | 'none' {
 function sarifName(id: string): string {
   return id.split(/[.-]/).map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`).join('');
 }
+
+export function resolveWorkspaceEvidencePath(report: DiffReport, evidenceFile: string, workspace?: string): string | undefined {
+  if (!workspace || report.after.source.kind !== 'directory') return undefined;
+  const sourceRoot = path.resolve(report.after.source.resolved);
+  const candidate = path.resolve(sourceRoot, evidenceFile);
+  if (!isWithin(sourceRoot, candidate)) return undefined;
+  const workspaceRoot = path.resolve(workspace);
+  if (!isWithin(workspaceRoot, candidate)) return undefined;
+  const relative = path.relative(workspaceRoot, candidate).split(path.sep).join('/');
+  return relative && !relative.startsWith('../') ? relative : undefined;
+}
+
+function isWithin(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function sanitizeSingleLine(value: string): string {
+  return value
+    .replace(/\r\n?|\n/g, ' ')
+    .replace(CONTROL_CHARACTER_PATTERN, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+// Intentional report-control sanitizer.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTER_PATTERN = new RegExp('[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f-\\u009f]', 'g');
 
 function riskColor(level: DiffReport['risk']['level']): string {
   return ({ critical: '#ff5f72', high: '#ff8a5b', medium: '#f5c451', low: '#6bd6e8', none: '#3ddc97' })[level];

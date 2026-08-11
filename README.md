@@ -38,7 +38,7 @@ Compose mounts the repository read-only at `/workspace`, so local artifacts can 
 | Network | New `fetch`/HTTP/socket capability, literal domains and IPs, DNS APIs |
 | Execution | `child_process`, `eval`, `Function`, `vm`, dynamic module loading, WebAssembly compilation |
 | Install-time behavior | Added or changed `preinstall`, `install`, `postinstall`, `prepare`, and publish hooks |
-| Filesystem and payloads | New `fs` access, executable bits, native/binary files, symlinks, size spikes |
+| Filesystem and payloads | New `fs` access, added/changed executable bits, native/binary files and symlinks, size spikes |
 | Obfuscation | High-entropy Base64/hex blobs, entropy jumps, very dense/minified/generated payloads |
 | Package graph | Added runtime/optional/peer dependencies and changed versions |
 | Ownership and provenance | Maintainer set, repository/name metadata, registry integrity, signature/attestation removal |
@@ -108,7 +108,7 @@ includeBaseline: false
 ## GitHub Actions
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 - name: Audit the candidate update
   uses: depdiff/depdiff@v1
   with:
@@ -118,6 +118,8 @@ includeBaseline: false
 ```
 
 The Action emits inline annotations and writes HTML + SARIF. A complete workflow—including Code Scanning upload and artifact retention—is in [`examples/github-action.yml`](examples/github-action.yml).
+
+When `policy` is supplied, its `failOn` threshold remains authoritative unless the workflow explicitly sets the optional `fail-on` input. Without a policy, Action/`--ci` mode defaults to `high`. Pin the Action itself to a reviewed full commit SHA in production workflows.
 
 ## How it works
 
@@ -132,7 +134,7 @@ flowchart LR
   P --> O["Terminal · HTML · JSON · SARIF · Markdown"]
 ```
 
-Registry metadata is fetched only from the configured HTTPS origin. Tarball redirects are pinned to that origin, integrity/shasum is verified when supplied, archive paths and entry types are validated before extraction, and configurable limits bound compressed size, unpacked size, file count, and individual files. Extraction happens in a disposable directory. Symlinks are never followed; archive links and special devices are rejected.
+Registry metadata is fetched only from the configured HTTPS origin. Every redirect is validated before the next request, metadata is streamed through a 16 MiB cap, and the strongest supplied SHA-256/384/512 integrity digest is verified. Archive paths, canonical root, entry types, and resource use are validated before analysis; configurable limits bound compressed size, unpacked size, file count, and individual files. Extraction happens in a disposable directory. Shipped bundled dependencies are included, symlinks are never followed, and archive links/special devices are rejected.
 
 JavaScript/TypeScript is parsed with Babel when possible and backed by lexical detectors for evasive/generated input. Files are compared by SHA-256 and normalized package metadata. Read the full [architecture and trust-boundary document](docs/architecture.md).
 
@@ -155,7 +157,7 @@ Depdiff's deliberately small wedge is the *semantic delta*: “this update newly
 - Target packages are treated as hostile data and are never executed.
 - Registry access is opt-out with `--offline`; no analysis data or telemetry is sent anywhere.
 - HTML output escapes package-controlled content and has no external JavaScript/CSS dependency.
-- Archive defaults: 128 MiB compressed, 512 MiB unpacked, 100:1 maximum compression ratio, 25,000 files, 32 MiB per file, 2 MiB parsed text.
+- Archive defaults: 128 MiB compressed, 512 MiB unpacked, 100:1 maximum compression ratio, 25,000 files, 32 MiB per file, 2 MiB parsed text. `package.json` fails closed if it exceeds the parsed-text limit.
 - Heuristics have false positives and false negatives. Runtime-computed behavior, native code, and novel obfuscation require deeper review.
 
 See [SECURITY.md](SECURITY.md) for the threat model and vulnerability reporting process.

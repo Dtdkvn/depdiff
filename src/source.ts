@@ -88,22 +88,25 @@ async function loadRegistryPackage(input: string, options: ResolveOptions): Prom
   const registry = normalizeRegistry(options.registry);
   const metadataUrl = new URL(encodeURIComponent(name), registry);
   const registryHost = new URL(registry).host;
-  const response = await fetchWithTimeout(metadataUrl, options.limits.timeoutMs);
-  assertTrustedResponse(response, registryHost, 'registry metadata');
+  const response = await fetchWithTimeout(metadataUrl, registryHost, options.limits.timeoutMs, 'registry metadata');
   if (!response.ok) {
     throw new UserError(`npm registry returned ${response.status} for ${name}`);
   }
   const document = await readRegistryDocument(response);
   const resolvedVersion = document['dist-tags']?.[requestedVersion] ?? requestedVersion;
-  const manifest = document.versions?.[resolvedVersion];
-  if (!manifest) {
+  const manifestValue: unknown = document.versions?.[resolvedVersion];
+  if (!isRecord(manifestValue)) {
     throw new UserError(
       `Version or dist-tag ${requestedVersion} was not found for ${name}. Use an exact version or a published dist-tag.`,
     );
   }
-  const distribution = manifest.dist;
-  const tarballUrl = distribution?.tarball;
-  if (!tarballUrl) throw new UserError(`Registry metadata for ${name}@${resolvedVersion} has no tarball URL.`);
+  const manifest = manifestValue as RegistryVersion;
+  const distributionValue: unknown = manifestValue.dist;
+  if (!isRecord(distributionValue)) throw new UserError(`Registry metadata for ${name}@${resolvedVersion} has no distribution object.`);
+  const tarballUrl = distributionValue.tarball;
+  if (typeof tarballUrl !== 'string' || !tarballUrl) throw new UserError(`Registry metadata for ${name}@${resolvedVersion} has no tarball URL.`);
+  const integrity = optionalRegistryString(distributionValue.integrity, 'dist.integrity');
+  const shasum = optionalRegistryString(distributionValue.shasum, 'dist.shasum');
   let parsedTarball: URL;
   try {
     parsedTarball = new URL(tarballUrl);
@@ -118,32 +121,52 @@ async function loadRegistryPackage(input: string, options: ResolveOptions): Prom
   }
 
   await mkdir(options.cacheDir, { recursive: true });
-  const identity = distribution.integrity ?? distribution.shasum ?? `${name}@${resolvedVersion}`;
-  const cachedTarball = path.join(options.cacheDir, `${sha256(identity)}.tgz`);
-  if (!(await isAccessible(cachedTarball))) {
-    await downloadTarball(parsedTarball, cachedTarball, registryHost, options);
+  const digestIdentity = integrity ?? shasum;
+  const tarballFile = digestIdentity
+    ? path.join(options.cacheDir, `${sha256(digestIdentity)}.tgz`)
+    : path.join(options.cacheDir, `.unverified.${process.pid}.${randomUUID()}.tgz`);
+  if (!digestIdentity || !(await isAccessible(tarballFile))) {
+    await downloadTarball(parsedTarball, tarballFile, registryHost, options);
   }
-  await verifyArchiveDigest(cachedTarball, distribution.integrity, distribution.shasum);
+  if (digestIdentity) {
+    try {
+      await verifyArchiveDigest(tarballFile, integrity, shasum);
+    } catch (error) {
+      await rm(tarballFile, { force: true });
+      throw error;
+    }
+  }
 
-  const maintainers = (manifest.maintainers ?? document.maintainers ?? []).map(formatMaintainer).filter(Boolean);
+  const maintainers = normalizeMaintainers(manifest.maintainers ?? document.maintainers);
+  const npmUser = normalizeMaintainers(manifest._npmUser)[0];
   const source: SourceDescriptor = {
     input,
     kind: 'registry',
     resolved: `${name}@${resolvedVersion}`,
     packageName: name,
     version: resolvedVersion,
-    ...(distribution.integrity ? { integrity: distribution.integrity } : {}),
-    ...(distribution.shasum ? { shasum: distribution.shasum } : {}),
+    ...(integrity ? { integrity } : {}),
+    ...(shasum ? { shasum } : {}),
     ...(document.time?.[resolvedVersion] ? { publishedAt: document.time[resolvedVersion] } : {}),
     ...(maintainers.length > 0 ? { maintainers } : {}),
     provenance: {
-      attestations: Boolean(distribution.attestations?.url),
-      signatures: (distribution.signatures?.length ?? 0) > 0,
-      ...(manifest._npmUser ? { npmUser: formatMaintainer(manifest._npmUser) } : {}),
-      ...(manifest.gitHead ? { gitHead: manifest.gitHead } : {}),
+      attestations: isRecord(distributionValue.attestations) && typeof distributionValue.attestations.url === 'string' && distributionValue.attestations.url.length > 0,
+      signatures: Array.isArray(distributionValue.signatures) && distributionValue.signatures.length > 0,
+      ...(npmUser ? { npmUser } : {}),
+      ...(typeof manifest.gitHead === 'string' && manifest.gitHead ? { gitHead: manifest.gitHead } : {}),
     },
   };
-  return loadTarball(cachedTarball, source, options);
+  try {
+    return await loadTarball(tarballFile, source, options);
+  } finally {
+    if (!digestIdentity) await rm(tarballFile, { force: true });
+  }
+}
+
+function optionalRegistryString(value: unknown, field: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') throw new UserError(`Registry metadata ${field} must be a string.`);
+  return value;
 }
 
 function parseRegistrySpecifier(input: string): { name: string; requestedVersion: string } {
@@ -176,16 +199,42 @@ function normalizeRegistry(value: string): string {
   return parsed.toString();
 }
 
-async function fetchWithTimeout(url: URL, timeoutMs: number): Promise<Response> {
-  try {
-    return await fetch(url, {
-      signal: AbortSignal.timeout(timeoutMs),
-      headers: { accept: 'application/json', 'user-agent': 'depdiff/0.1.0' },
-      redirect: 'follow',
-    });
-  } catch (error) {
-    throw new UserError(`Network request failed for ${url.host}: ${error instanceof Error ? error.message : String(error)}`);
+async function fetchWithTimeout(
+  initialUrl: URL,
+  expectedHost: string,
+  timeoutMs: number,
+  label: string,
+): Promise<Response> {
+  const signal = AbortSignal.timeout(timeoutMs);
+  let currentUrl = initialUrl;
+  const maximumRedirects = 5;
+  for (let redirects = 0; redirects <= maximumRedirects; redirects += 1) {
+    assertTrustedUrl(currentUrl, expectedHost, label);
+    let response: Response;
+    try {
+      response = await fetch(currentUrl, {
+        signal,
+        headers: { accept: 'application/json', 'user-agent': 'depdiff/0.1.0' },
+        redirect: 'manual',
+      });
+    } catch (error) {
+      throw new UserError(`Network request failed for ${currentUrl.host}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+    if (redirects === maximumRedirects) throw new UserError(`Too many redirects while fetching ${label}.`);
+    const location = response.headers.get('location');
+    if (!location) throw new UserError(`Redirect while fetching ${label} did not include a Location header.`);
+    let nextUrl: URL;
+    try {
+      nextUrl = new URL(location, currentUrl);
+    } catch {
+      throw new UserError(`Invalid redirect while fetching ${label}: ${location}`);
+    }
+    assertTrustedUrl(nextUrl, expectedHost, label);
+    await response.body?.cancel();
+    currentUrl = nextUrl;
   }
+  throw new UserError(`Too many redirects while fetching ${label}.`);
 }
 
 async function readRegistryDocument(response: Response): Promise<RegistryDocument> {
@@ -193,8 +242,25 @@ async function readRegistryDocument(response: Response): Promise<RegistryDocumen
   const declared = Number(response.headers.get('content-length') ?? 0);
   if (declared > maximum) throw new UserError('Registry metadata exceeds the 16 MiB limit.');
   try {
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > maximum) throw new UserError('Registry metadata exceeds the 16 MiB limit.');
+    if (!response.body) throw new UserError('Registry metadata response has no body.');
+    const reader = response.body.getReader();
+    const chunks: Buffer[] = [];
+    let received = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        received += value.byteLength;
+        if (received > maximum) {
+          await reader.cancel('Registry metadata size limit exceeded.');
+          throw new UserError('Registry metadata exceeds the 16 MiB limit.');
+        }
+        chunks.push(Buffer.from(value));
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const buffer = Buffer.concat(chunks, received);
     const parsed: unknown = JSON.parse(buffer.toString('utf8'));
     if (!isRecord(parsed)) throw new UserError('Registry metadata is not a JSON object.');
     return parsed;
@@ -204,10 +270,9 @@ async function readRegistryDocument(response: Response): Promise<RegistryDocumen
   }
 }
 
-function assertTrustedResponse(response: Response, expectedHost: string, label: string): void {
-  const finalUrl = new URL(response.url);
-  if (finalUrl.protocol !== 'https:' || finalUrl.host !== expectedHost) {
-    throw new UserError(`Untrusted redirect while fetching ${label}: ${finalUrl.origin}`);
+function assertTrustedUrl(url: URL, expectedHost: string, label: string): void {
+  if (url.protocol !== 'https:' || url.host !== expectedHost) {
+    throw new UserError(`Untrusted redirect while fetching ${label}: ${url.origin}`);
   }
 }
 
@@ -217,8 +282,7 @@ async function downloadTarball(
   expectedHost: string,
   options: ResolveOptions,
 ): Promise<void> {
-  const response = await fetchWithTimeout(url, options.limits.timeoutMs);
-  assertTrustedResponse(response, expectedHost, 'package tarball');
+  const response = await fetchWithTimeout(url, expectedHost, options.limits.timeoutMs, 'package tarball');
   if (!response.ok || !response.body) throw new UserError(`Tarball download failed with HTTP ${response.status}.`);
   const declared = Number(response.headers.get('content-length') ?? 0);
   if (declared > options.limits.maxArchiveBytes) {
@@ -252,14 +316,27 @@ async function downloadTarball(
 }
 
 async function verifyArchiveDigest(file: string, integrity?: string, shasum?: string): Promise<void> {
-  const candidates = integrity?.split(/\s+/).filter(Boolean) ?? [];
-  const preferred = candidates.find((candidate) => /^(?:sha512|sha384|sha256)-/.test(candidate));
-  if (preferred) {
-    const separator = preferred.indexOf('-');
-    const algorithm = preferred.slice(0, separator);
-    const expected = preferred.slice(separator + 1);
+  const normalizedIntegrity = integrity?.trim() ?? '';
+  if (integrity !== undefined && !normalizedIntegrity) {
+    throw new UserError('Tarball integrity is empty after whitespace normalization.');
+  }
+  if (normalizedIntegrity) {
+    const candidates = normalizedIntegrity.split(/\s+/).filter(Boolean);
+    for (const candidate of candidates) {
+      const algorithm = ['sha512', 'sha384', 'sha256'].find((value) => candidate.startsWith(`${value}-`));
+      if (algorithm && !new RegExp(`^${algorithm}-[A-Za-z0-9+/]+={0,2}$`).test(candidate)) {
+        throw new UserError(`Tarball integrity contains a malformed ${algorithm} digest.`);
+      }
+    }
+    const parsed = candidates.map((candidate) => {
+      const match = /^(sha512|sha384|sha256)-([A-Za-z0-9+/]+={0,2})$/.exec(candidate);
+      return match ? { algorithm: match[1]!, expected: match[2]! } : undefined;
+    }).filter((candidate): candidate is { algorithm: string; expected: string } => candidate !== undefined);
+    const algorithm = ['sha512', 'sha384', 'sha256'].find((value) => parsed.some((candidate) => candidate.algorithm === value));
+    if (!algorithm) throw new UserError('Tarball integrity uses no supported, valid SHA-256/384/512 digest.');
     const actual = await hashFile(file, algorithm, 'base64');
-    if (actual !== expected) throw new UserError(`Tarball integrity mismatch (${algorithm}).`);
+    const expected = parsed.filter((candidate) => candidate.algorithm === algorithm).map((candidate) => candidate.expected);
+    if (!expected.includes(actual)) throw new UserError(`Tarball integrity mismatch (${algorithm}).`);
     return;
   }
   if (shasum) {
@@ -373,8 +450,14 @@ export function assertSafeArchivePath(entryPath: string): void {
 
 async function findArchiveRoot(temporary: string): Promise<string> {
   const npmRoot = path.join(temporary, 'package');
-  if (await isAccessible(path.join(npmRoot, 'package.json'))) return npmRoot;
   const entries = await readdir(temporary, { withFileTypes: true });
+  if (await isAccessible(path.join(npmRoot, 'package.json'))) {
+    const unexpected = entries.filter((entry) => entry.name !== 'package');
+    if (unexpected.length > 0) {
+      throw new UserError(`Archive contains entries outside its canonical package/ root: ${unexpected.map((entry) => entry.name).join(', ')}`);
+    }
+    return npmRoot;
+  }
   if (entries.length === 1 && entries[0]?.isDirectory()) return path.join(temporary, entries[0].name);
   return temporary;
 }
@@ -388,6 +471,10 @@ async function scanDirectory(
   const files = new Map<string, LoadedFile>();
   let totalBytes = 0;
   let entriesVisited = 0;
+  let packageManifest: Buffer | undefined;
+  const ignorePatterns = source.kind === 'directory'
+    ? [...options.localIgnore, ...options.ignore]
+    : options.ignore;
 
   async function visit(current: string): Promise<void> {
     const entries = await readdir(current, { withFileTypes: true });
@@ -397,7 +484,7 @@ async function scanDirectory(
       if (entriesVisited > options.limits.maxFiles) throw new UserError(`Input contains more than ${options.limits.maxFiles} entries.`);
       const absolute = path.join(current, entry.name);
       const relative = path.relative(root, absolute).split(path.sep).join('/');
-      if (options.ignore.some((pattern) => minimatch(relative, pattern, { dot: true }))) continue;
+      if (ignorePatterns.some((pattern) => minimatch(relative, pattern, { dot: true }))) continue;
       if (entry.isSymbolicLink()) {
         const target = await readlink(absolute);
         const details = await lstat(absolute);
@@ -424,6 +511,12 @@ async function scanDirectory(
       totalBytes += details.size;
       if (totalBytes > options.limits.maxTotalBytes) throw new UserError('Input exceeds the total uncompressed size limit.');
       const buffer = await readFile(resolved);
+      if (relative === 'package.json') {
+        if (buffer.length > options.limits.maxTextBytes) {
+          throw new UserError(`package.json exceeds the ${options.limits.maxTextBytes}-byte parsed manifest limit.`);
+        }
+        packageManifest = buffer;
+      }
       const kind = isProbablyText(buffer) ? 'text' : 'binary';
       files.set(relative, {
         path: relative,
@@ -437,8 +530,7 @@ async function scanDirectory(
   }
 
   await visit(root);
-  const packageFile = files.get('package.json');
-  const metadata = parsePackageMetadata(packageFile?.content, source);
+  const metadata = parsePackageMetadata(packageManifest, source);
   const summaries: FileSummary[] = [...files.values()].map((file) => ({
     path: file.path,
     size: file.size,
@@ -529,4 +621,12 @@ async function isAccessible(target: string): Promise<boolean> {
   }
 }
 
-export const __test = { parseRegistrySpecifier, isProbablyText, parsePackageMetadata, normalizeRegistry };
+export const __test = {
+  parseRegistrySpecifier,
+  isProbablyText,
+  parsePackageMetadata,
+  normalizeRegistry,
+  fetchWithTimeout,
+  readRegistryDocument,
+  verifyArchiveDigest,
+};

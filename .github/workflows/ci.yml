@@ -17,8 +17,8 @@ jobs:
       matrix:
         node: [20, 22, 24]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: ${{ matrix.node }}
           cache: npm
@@ -29,7 +29,7 @@ jobs:
       - run: npm run build
       - run: node dist/cli.js demo --output reports/demo.html --json reports/demo.json --sarif reports/demo.sarif --no-fail --quiet
       - run: npm pack --dry-run
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: matrix.node == 20
         with:
           name: depdiff-demo-report
@@ -39,7 +39,25 @@ jobs:
     name: Container smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - run: mkdir -p reports
       - run: DEPDIFF_UID=$(id -u) DEPDIFF_GID=$(id -g) docker compose run --rm depdiff
       - run: test -s reports/demo.html && test -s reports/demo.sarif
+
+  action:
+    name: Local GitHub Action smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Run the repository Action
+        id: depdiff
+        uses: ./
+        with:
+          before: fixtures/safe-v1
+          after: fixtures/risky-v2
+          offline: "true"
+          fail-on: never
+          report: reports/action.html
+          sarif: reports/action.sarif
+      - run: test -s reports/action.html && test -s reports/action.sarif
+      - run: test "${{ steps.depdiff.outputs.risk_exit_code }}" = "0"

@@ -181,6 +181,7 @@ export interface ResolveOptions {
   registry: string;
   cacheDir: string;
   limits: ScanLimits;
+  localIgnore: string[];
   ignore: string[];
 }
 

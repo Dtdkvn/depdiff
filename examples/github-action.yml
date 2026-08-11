@@ -18,7 +18,7 @@ jobs:
   depdiff:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - name: Audit npm update
         id: depdiff
         uses: depdiff/depdiff@v1
@@ -26,11 +26,11 @@ jobs:
           before: ${{ inputs.before }}
           after: ${{ inputs.after }}
           policy: .depdiff.yml
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@9e3211c9a3b9311dfe05da2ed48eea3386f042dd # v4.37.6
         if: always()
         with:
           sarif_file: depdiff-results.sarif
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
           name: depdiff-report

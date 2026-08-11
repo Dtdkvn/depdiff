@@ -30,6 +30,18 @@ describe('policy', () => {
     }
   });
 
+  it('preserves a policy threshold in CI unless the caller explicitly overrides it', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'depdiff-policy-threshold-'));
+    const file = path.join(root, 'policy.yml');
+    try {
+      await writeFile(file, 'version: 1\nfailOn: medium\n');
+      expect((await loadPolicy(file, { ci: true })).policy.failOn).toBe('medium');
+      expect((await loadPolicy(file, { ci: true, failOn: 'high' })).policy.failOn).toBe('high');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('enforces severity, capabilities, domains, scripts, and inventory limits', async () => {
     const report = await audit(safe, risky, { offline: true });
     const policy: Policy = {

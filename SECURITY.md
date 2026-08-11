@@ -39,12 +39,12 @@ Maintainers aim to acknowledge reports within 72 hours, provide an initial asses
 ### Security invariants
 
 1. Depdiff never executes, imports, installs, compiles, or shells into target package code.
-2. Registry requests require HTTPS and remain on the configured origin.
-3. Registry digests are verified when present.
-4. Archive paths/types and declared resource use are validated before extraction.
+2. Registry requests require HTTPS; every redirect is validated before leaving the configured origin.
+3. Registry metadata is streamed through a hard cap and the strongest supported digest is verified when present.
+4. Archive paths/types, canonical root, and declared resource use are validated before analysis.
 5. Extraction is disposable and contained; links and special files are rejected.
 6. Local symlinks are fingerprinted but never followed.
-7. Report-controlled text is escaped before entering HTML/Markdown contexts.
+7. Report-controlled text is escaped or normalized before entering HTML, Markdown, terminal, workflow-command, or SARIF location contexts.
 8. Limits bound compressed bytes, expanded bytes, compression ratio, files, per-file bytes, parsed text, and network time.
 
 ### Explicit limitations
@@ -58,7 +58,7 @@ Maintainers aim to acknowledge reports within 72 hours, provide an initial asses
 
 ## Hardening CI
 
-- Pin the Action to a reviewed commit SHA for high-assurance workflows.
+- Pin the Action to a reviewed commit SHA for high-assurance workflows. This repository's own third-party workflow Actions and base images are SHA/digest pinned.
 - Use read-only `contents` permission; grant `security-events: write` only to a separate SARIF upload step.
 - Run `--offline` against checked-in/downloaded artifacts where reproducibility matters.
 - Keep policy and baselines under code review.
@@ -68,3 +68,5 @@ Maintainers aim to acknowledge reports within 72 hours, provide an initial asses
 ## Dependency installation
 
 Project development and images use `npm ci --ignore-scripts`, so dependencies do not run lifecycle hooks during setup. Target-package dependencies are never installed under any mode.
+
+For TLS-inspecting development networks, both Dockerfiles accept the trusted root only as an optional BuildKit secret: `docker build --secret id=depdiff_ca,src=/path/to/root.pem .`. The certificate is available only to dependency-install steps and is not copied into an image layer.

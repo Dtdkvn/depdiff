@@ -19,7 +19,7 @@ Local inputs are checked before interpreting a value as a registry specifier.
 | `--stdout <format>` | `summary` | `summary`, `json`, `markdown`, or `sarif` |
 | `--offline` | false | Reject registry inputs and perform no network requests |
 | `--deterministic` | false | Use `SOURCE_DATE_EPOCH`, or Unix epoch when unset |
-| `--ci` | false | Emit GitHub annotations and default `--fail-on high` |
+| `--ci` | false | Emit GitHub annotations and default to `failOn: high` only when no policy is supplied |
 | `--no-fail` | false | Exit zero after any completed audit |
 | `--fail-on <severity>` | policy / never | Override the severity gate |
 | `--policy <file>` | — | YAML/JSON policy |
@@ -27,7 +27,7 @@ Local inputs are checked before interpreting a value as a registry specifier.
 | `--write-baseline <file>` | — | Write current findings as a baseline |
 | `--registry <url>` | npm public registry | Trusted HTTPS registry origin |
 | `--cache-dir <path>` | `.depdiff-cache` | Verified tarball cache |
-| `--ignore <glob>` | — | Additional local path ignore; repeatable |
+| `--ignore <glob>` | — | Explicit path ignore for every source kind; repeatable |
 | `--max-files <count>` | 25,000 | Maximum archive/directory file count |
 | `--max-total-bytes <n>` | 536,870,912 | Maximum unpacked bytes |
 | `--max-file-bytes <n>` | 33,554,432 | Maximum individual file bytes |
@@ -37,6 +37,10 @@ Local inputs are checked before interpreting a value as a registry specifier.
 | `-q, --quiet` | false | Suppress terminal summary and paths |
 
 Offline mode is deterministic by default. Set `SOURCE_DATE_EPOCH` (seconds) to choose the report timestamp.
+
+All requested output files must resolve to distinct paths. Reports are written through same-directory temporary files and atomically renamed; `depdiff init` uses an exclusive create and cannot race another initializer into overwriting a policy.
+
+Default `.git`, `node_modules`, and Depdiff cache/demo ignores apply only to local working directories. Tarball and registry snapshots include every shipped path (including bundled dependencies) unless the caller supplies an explicit `--ignore`.
 
 ## `depdiff demo`
 

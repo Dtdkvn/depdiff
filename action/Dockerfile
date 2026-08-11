@@ -2,7 +2,7 @@
 FROM node:20.20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,id=depdiff-build-npm,target=/root/.npm,sharing=locked \
+RUN --mount=type=cache,id=depdiff-action-build-npm,target=/root/.npm,sharing=locked \
     --mount=type=secret,id=depdiff_ca,required=false \
     if [ -f /run/secrets/depdiff_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/depdiff_ca; fi; \
     npm ci --ignore-scripts --no-audit --no-fund \
@@ -11,20 +11,15 @@ COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build
 
-FROM node:20.20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293 AS runtime
+FROM node:20.20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
 ENV NODE_ENV=production
 WORKDIR /app
-RUN addgroup -S depdiff && adduser -S -G depdiff -h /app depdiff
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,id=depdiff-runtime-npm,target=/root/.npm,sharing=locked \
+RUN --mount=type=cache,id=depdiff-action-runtime-npm,target=/root/.npm,sharing=locked \
     --mount=type=secret,id=depdiff_ca,required=false \
     if [ -f /run/secrets/depdiff_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/depdiff_ca; fi; \
     npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
     && node -e "for (const name of ['@babel/parser','commander','minimatch','picocolors','tar','yaml']) require.resolve(name)"
 COPY --from=build /app/dist ./dist
-COPY fixtures ./fixtures
-RUN mkdir -p /work /reports && chown -R depdiff:depdiff /app /work /reports
-USER depdiff
-WORKDIR /work
-ENTRYPOINT ["node", "/app/dist/cli.js"]
-CMD ["--help"]
+COPY scripts/action-entrypoint.mjs ./scripts/action-entrypoint.mjs
+ENTRYPOINT ["node", "/app/scripts/action-entrypoint.mjs"]

@@ -17,8 +17,12 @@ Rule IDs are stable within the v1 report schema. A detector may add a suffix for
 | `dependencies.runtime.added` | low/medium | New shipped dependencies expand trust |
 | `binary.native.added` | high | Native executable/library payload added |
 | `binary.added` | medium | Other binary payload added |
+| `binary.native.changed` | high | Existing native executable/library payload changed |
+| `binary.changed` | medium | Existing binary payload changed or text became binary |
 | `files.executable.added` | medium | New file has executable permission bits |
+| `files.executable.changed` | medium | Existing file newly gained executable permission bits |
 | `files.symlink.added` | medium | Local input has a new symlink (never followed) |
+| `files.symlink.changed` | medium | Local symlink target or file kind changed |
 | `inventory.size.spike` | medium | Unpacked size grew sharply |
 | `obfuscation.encoded-payload` | high | Long high-entropy Base64/hex-like blob added |
 | `obfuscation.entropy-spike` | medium | File entropy increased sharply |

@@ -4,7 +4,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { audit } from '../src/audit.js';
-import { shannonEntropy } from '../src/analyzer.js';
+import { analyzeDiff, shannonEntropy } from '../src/analyzer.js';
+import { DEFAULT_LIMITS } from '../src/constants.js';
+import type { FileSummary, LoadedFile, LoadedPackage, PackageMetadata } from '../src/types.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const safe = path.join(projectRoot, 'fixtures', 'safe-v1');
@@ -79,6 +81,52 @@ describe('analyzeDiff', () => {
       'capability.added.module-loader',
     ]));
   });
+
+  it('reports changed native binaries, executable transitions, and symlink targets', () => {
+    const before = syntheticPackage('1.0.0', {
+      'addon.node': syntheticFile('addon.node', 'a'.repeat(64), 0o644, 'binary'),
+      'script.sh': syntheticFile('script.sh', 'b'.repeat(64), 0o644, 'text'),
+      link: syntheticFile('link', 'c'.repeat(64), 0o777, 'symlink'),
+    });
+    const after = syntheticPackage('1.1.0', {
+      'addon.node': syntheticFile('addon.node', 'd'.repeat(64), 0o644, 'binary'),
+      'script.sh': syntheticFile('script.sh', 'b'.repeat(64), 0o755, 'text'),
+      link: syntheticFile('link', 'e'.repeat(64), 0o777, 'symlink'),
+    });
+    const report = analyzeDiff(before, after, {
+      generatedAt: '1970-01-01T00:00:00.000Z',
+      offline: true,
+      resolveOptions: {
+        offline: true, registry: 'https://registry.npmjs.org/', cacheDir: '.cache', limits: DEFAULT_LIMITS,
+        localIgnore: [], ignore: [],
+      },
+    });
+    expect(report.findings.map((finding) => finding.id)).toEqual(expect.arrayContaining([
+      'binary.native.changed',
+      'files.executable.changed',
+      'files.symlink.changed',
+    ]));
+  });
+
+  it('changes capability fingerprints when behavior changes in the same file', async () => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({ name: 'fingerprint-test', version: '1.0.0' }),
+      'index.js': 'export const ok = true;',
+    });
+    const reviewed = await makePackage({
+      'package.json': JSON.stringify({ name: 'fingerprint-test', version: '1.1.0' }),
+      'index.js': "require('node:child_process').execFile('/usr/bin/convert', ['safe.png']);",
+    });
+    const changed = await makePackage({
+      'package.json': JSON.stringify({ name: 'fingerprint-test', version: '1.2.0' }),
+      'index.js': "require('node:child_process').exec(process.env.ATTACKER_COMMAND);",
+    });
+    const first = (await audit(before, reviewed, { offline: true })).findings.find((finding) => finding.id === 'capability.added.child_process');
+    const second = (await audit(before, changed, { offline: true })).findings.find((finding) => finding.id === 'capability.added.child_process');
+    expect(first?.fingerprint).toBeDefined();
+    expect(second?.fingerprint).toBeDefined();
+    expect(second?.fingerprint).not.toBe(first?.fingerprint);
+  });
 });
 
 describe('entropy helper', () => {
@@ -97,4 +145,27 @@ async function makePackage(files: Record<string, string>): Promise<string> {
     await writeFile(destination, contents, 'utf8');
   }
   return root;
+}
+
+function syntheticFile(filePath: string, digest: string, mode: number, kind: FileSummary['kind']): LoadedFile {
+  return { path: filePath, size: 1, sha256: digest, mode, kind };
+}
+
+function syntheticPackage(version: string, entries: Record<string, LoadedFile>): LoadedPackage {
+  const packageMetadata: PackageMetadata = {
+    name: 'synthetic-package', version, engines: {}, scripts: {}, dependencies: {}, optionalDependencies: {},
+    peerDependencies: {}, devDependencies: {}, bundledDependencies: [], maintainers: [],
+  };
+  const files = new Map(Object.entries(entries));
+  return {
+    files,
+    snapshot: {
+      source: { input: 'synthetic', kind: 'directory', resolved: 'synthetic' },
+      package: packageMetadata,
+      files: [...files.values()].map((file) => ({
+        path: file.path, size: file.size, sha256: file.sha256, mode: file.mode, kind: file.kind,
+      })),
+      totalBytes: files.size,
+    },
+  };
 }

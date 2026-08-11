@@ -18,6 +18,7 @@ Useful commands:
 - `npm run dev -- compare <before> <after>` — run TypeScript directly;
 - `npm run demo` — generate deterministic reports from hostile fixtures;
 - `npm test` — run the Vitest suite;
+- `npm run test:coverage` — run the enforced coverage gate, including CLI behavior;
 - `npm run lint` / `npm run typecheck` / `npm run build` — individual gates;
 - `npm run check` — every required pre-PR gate.
 
@@ -28,8 +29,9 @@ Useful commands:
 3. Findings need a stable semantic identity, evidence, remediation, tests, and documentation.
 4. Avoid a detector that only increases noise. Prefer “new capability + concrete location” over generic pattern counts.
 5. Output renderers must escape all package-controlled values.
-6. Offline reports must be deterministic.
-7. New dependencies need a short rationale in the pull request and must not require install scripts.
+6. Archive and registry readers fail closed: never silently omit a shipped path, redirect hop, manifest, or digest.
+7. Offline reports must be deterministic.
+8. New dependencies need a short rationale in the pull request and must not require install scripts.
 
 ## Adding a detector
 

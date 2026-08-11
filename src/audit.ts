@@ -26,7 +26,8 @@ export async function audit(beforeInput: string, afterInput: string, options: Au
     registry: options.registry ?? 'https://registry.npmjs.org/',
     cacheDir: path.resolve(options.cacheDir ?? '.depdiff-cache'),
     limits,
-    ignore: [...DEFAULT_IGNORES, ...(options.ignore ?? [])],
+    localIgnore: DEFAULT_IGNORES,
+    ignore: options.ignore ?? [],
   };
   const [{ policy, path: policyPath }, baseline, before, after] = await Promise.all([
     loadPolicy(options.policyPath, { ...(options.failOn !== undefined ? { failOn: options.failOn } : {}), ci: options.ci ?? false }),

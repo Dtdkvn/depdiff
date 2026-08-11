@@ -40,6 +40,6 @@ depdiff compare old.tgz candidate.tgz --offline \
   --write-baseline .depdiff-baseline.json --no-fail
 ```
 
-Commit the baseline. On a later comparison, pass `--baseline .depdiff-baseline.json`. Changed semantic evidence produces a different fingerprint and re-enters the review queue.
+Commit the baseline. On a later comparison, pass `--baseline .depdiff-baseline.json`. Changed semantic evidence produces a different fingerprint and re-enters the review queue; capability fingerprints include hashes of the candidate files that produced their signals.
 
 Never baseline an unexplained critical finding merely to make CI green.
