@@ -1,0 +1,11 @@
+node_modules/
+.npm-cache/
+/dist/
+coverage/
+.depdiff-cache/
+.depdiff-demo/
+*.log
+*.tgz
+.DS_Store
+.idea/
+.vscode/

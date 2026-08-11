@@ -1,0 +1,15 @@
+version: 1
+failOn: high
+maxRiskScore: 49
+denyCapabilities:
+  - child_process
+  - dynamic-code
+denyDomains:
+  - "*"
+allowDomains:
+  - "registry.npmjs.org"
+allowInstallScripts: false
+maxAddedDependencies: 10
+maxAddedFiles: 250
+ignoreFindings: []
+includeBaseline: false

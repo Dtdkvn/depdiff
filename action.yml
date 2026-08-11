@@ -1,0 +1,41 @@
+name: Depdiff npm update audit
+description: Evidence-rich, local-first npm tarball diffing for pull requests and release gates.
+author: Depdiff contributors
+branding:
+  icon: shield
+  color: green
+inputs:
+  before:
+    description: Old package@version, tarball, or checked-out directory.
+    required: true
+  after:
+    description: New package@version, tarball, or checked-out directory.
+    required: true
+  policy:
+    description: Optional YAML/JSON policy path in the workspace.
+    required: false
+  baseline:
+    description: Optional accepted-finding baseline JSON path.
+    required: false
+  fail-on:
+    description: Severity threshold (info, low, medium, high, critical, never).
+    default: high
+  report:
+    description: Standalone HTML report output path.
+    default: depdiff-report.html
+  sarif:
+    description: SARIF output path.
+    default: depdiff-results.sarif
+  offline:
+    description: Forbid network access and require local inputs.
+    default: "false"
+outputs:
+  report:
+    description: Absolute path to the standalone HTML report.
+  sarif:
+    description: Absolute path to the SARIF report.
+  risk_exit_code:
+    description: Depdiff exit code (0 pass, 1 policy violation).
+runs:
+  using: docker
+  image: Dockerfile.action

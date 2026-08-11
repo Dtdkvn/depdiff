@@ -1,0 +1,11 @@
+.git
+.github
+.depdiff-cache
+.depdiff-demo
+.npm-cache
+coverage
+/dist
+node_modules
+reports/*
+test
+*.log

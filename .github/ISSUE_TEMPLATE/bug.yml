@@ -1,0 +1,40 @@
+name: Bug report
+description: Report incorrect behavior, a crash, or a false positive/negative.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: For security vulnerabilities, use a private GitHub security advisory instead.
+  - type: input
+    id: version
+    attributes:
+      label: Depdiff version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Input type
+      options: [npm registry versions, local tarballs, local directories, mixed]
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: Redact private package names, paths, domains, and report evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: OS, Node version, install method, policy flags

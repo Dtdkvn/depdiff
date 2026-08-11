@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/depdiff/depdiff/main/schemas/report.schema.json",
+  "title": "Depdiff report v1",
+  "type": "object",
+  "required": ["schemaVersion", "tool", "generatedAt", "before", "after", "inventory", "metadata", "findings", "risk", "policy", "analysis"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "tool": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": { "name": { "const": "depdiff" }, "version": { "type": "string" } }
+    },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "before": { "$ref": "#/$defs/snapshot" },
+    "after": { "$ref": "#/$defs/snapshot" },
+    "inventory": { "type": "object" },
+    "metadata": { "type": "object" },
+    "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "risk": {
+      "type": "object",
+      "required": ["score", "level", "counts", "newFindings", "baselineFindings"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "level": { "enum": ["none", "low", "medium", "high", "critical"] },
+        "counts": { "type": "object" },
+        "newFindings": { "type": "integer", "minimum": 0 },
+        "baselineFindings": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "policy": { "type": "object", "required": ["passed", "violations"] },
+    "analysis": {
+      "type": "object",
+      "required": ["offline", "packageCodeExecuted", "limits", "notes"],
+      "properties": {
+        "offline": { "type": "boolean" },
+        "packageCodeExecuted": { "const": false },
+        "limits": { "type": "object" },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "$defs": {
+    "snapshot": {
+      "type": "object",
+      "required": ["source", "package", "files", "totalBytes"],
+      "properties": {
+        "source": { "type": "object" },
+        "package": { "type": "object" },
+        "files": { "type": "array" },
+        "totalBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "required": ["id", "fingerprint", "title", "description", "category", "severity", "score", "evidence", "remediation", "status", "tags"],
+      "properties": {
+        "id": { "type": "string" },
+        "fingerprint": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "severity": { "enum": ["info", "low", "medium", "high", "critical"] },
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "evidence": { "type": "array", "items": { "type": "object" } },
+        "remediation": { "type": "string" },
+        "status": { "enum": ["new", "baseline"] },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

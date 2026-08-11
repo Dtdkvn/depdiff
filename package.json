@@ -1,0 +1,82 @@
+{
+  "name": "depdiff-audit",
+  "version": "0.1.0",
+  "description": "Local-first npm package update risk diffing with evidence-rich HTML, JSON, SARIF, and Markdown reports.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "bin": {
+    "depdiff": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "fixtures",
+    "schemas",
+    "action.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "node scripts/clean.mjs",
+    "dev": "tsx src/cli.ts",
+    "lint": "eslint src test && node --check scripts/action-entrypoint.mjs && node --check scripts/clean.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "demo": "tsx src/cli.ts compare fixtures/safe-v1 fixtures/risky-v2 --offline --output .depdiff-demo/report.html --json .depdiff-demo/report.json --markdown .depdiff-demo/report.md --sarif .depdiff-demo/report.sarif --no-fail",
+    "prepack": "npm run clean && npm run check"
+  },
+  "keywords": [
+    "npm",
+    "security",
+    "supply-chain",
+    "static-analysis",
+    "dependency-diff",
+    "sarif",
+    "github-actions"
+  ],
+  "author": "Depdiff contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/depdiff/depdiff.git"
+  },
+  "bugs": {
+    "url": "https://github.com/depdiff/depdiff/issues"
+  },
+  "homepage": "https://github.com/depdiff/depdiff#readme",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "packageManager": "npm@10.8.2",
+  "dependencies": {
+    "@babel/parser": "^7.28.0",
+    "commander": "^14.0.0",
+    "minimatch": "^10.0.3",
+    "picocolors": "^1.1.1",
+    "tar": "^7.4.3",
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.30.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.35.1",
+    "vitest": "^3.2.4"
+  }
+}

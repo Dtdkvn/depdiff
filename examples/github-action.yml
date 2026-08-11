@@ -1,0 +1,37 @@
+name: Dependency update audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      before:
+        description: Previous package version (for example chalk@5.3.0)
+        required: true
+      after:
+        description: Candidate package version (for example chalk@5.4.0)
+        required: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  depdiff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit npm update
+        id: depdiff
+        uses: depdiff/depdiff@v1
+        with:
+          before: ${{ inputs.before }}
+          after: ${{ inputs.after }}
+          policy: .depdiff.yml
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: depdiff-results.sarif
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: depdiff-report
+          path: depdiff-report.html

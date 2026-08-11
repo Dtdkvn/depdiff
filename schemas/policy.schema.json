@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/depdiff/depdiff/main/schemas/policy.schema.json",
+  "title": "Depdiff policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": { "const": 1 },
+    "failOn": { "enum": ["info", "low", "medium", "high", "critical", "never"], "default": "never" },
+    "maxRiskScore": { "type": "integer", "minimum": 0, "maximum": 100, "default": 100 },
+    "denyCapabilities": { "$ref": "#/$defs/stringArray" },
+    "denyDomains": { "$ref": "#/$defs/stringArray" },
+    "allowDomains": { "$ref": "#/$defs/stringArray" },
+    "allowInstallScripts": { "type": "boolean", "default": true },
+    "maxAddedDependencies": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+    "maxAddedFiles": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+    "ignoreFindings": { "$ref": "#/$defs/stringArray" },
+    "includeBaseline": { "type": "boolean", "default": false }
+  },
+  "$defs": {
+    "stringArray": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+  }
+}

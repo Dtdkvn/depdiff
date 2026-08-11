@@ -1,0 +1,10 @@
+src/
+test/
+fixtures/
+docs/
+.github/
+coverage/
+*.config.*
+tsconfig*.json
+Dockerfile*
+compose.yaml

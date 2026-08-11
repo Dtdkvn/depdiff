@@ -1,0 +1,23 @@
+name: Feature request
+description: Propose a focused detector, workflow, or format improvement.
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Review problem
+      description: What update risk or workflow is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Desired evidence and differential behavior
+      description: Explain what would be compared before/after and how false positives could be limited.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
