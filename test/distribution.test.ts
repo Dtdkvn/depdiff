@@ -30,8 +30,12 @@ describe('distribution contracts', () => {
 
   it('pins CI Actions and container bases and guards release tag versions', async () => {
     const workflows = await Promise.all(['ci.yml', 'release.yml'].map((file) => readFile(path.join(projectRoot, '.github', 'workflows', file), 'utf8')));
-    for (const workflow of workflows) {
-      for (const match of workflow.matchAll(/^\s*- uses:\s+([^./\s][^@\s]*)@([^\s#]+)/gm)) {
+    const consumerExamples = await Promise.all([
+      readFile(path.join(projectRoot, 'examples', 'github-action.yml'), 'utf8'),
+      readFile(path.join(projectRoot, 'README.md'), 'utf8'),
+    ]);
+    for (const document of [...workflows, ...consumerExamples]) {
+      for (const match of document.matchAll(/^\s*(?:-\s*)?uses:\s+([^./\s][^@\s]*)@([^\s#]+)/gm)) {
         expect(match[2], `${match[1]} must use a full commit SHA`).toMatch(/^[a-f0-9]{40}$/);
       }
     }

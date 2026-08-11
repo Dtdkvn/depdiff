@@ -110,7 +110,7 @@ includeBaseline: false
 ```yaml
 - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 - name: Audit the candidate update
-  uses: depdiff/depdiff@v1
+  uses: depdiff/depdiff@d7a9ee12ea2c93e5ecd97aa5bbb127cf58fb6ee3 # reviewed v0.1 implementation
   with:
     before: package-name@1.4.0
     after: package-name@1.5.0
