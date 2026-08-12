@@ -723,11 +723,16 @@ function isNonRegistryDependencySpecifier(value: string | undefined): boolean {
   if (!value) return false;
   const specifier = value.trim();
   if (/^npm:/iu.test(specifier)) return false;
+  // A leading @ is ambiguous: exactly @scope/name with an optional registry
+  // version/range is registry-backed, while additional path segments,
+  // backslashes, fragments, and trailing separators are local path syntax.
+  if (/^@[^/\\#:@\s]+\/[^/\\#:@\s]+(?:@[^/\\#:\r\n]+)?$/u.test(specifier)) return false;
   return /^(?:file|link|workspace|https?|ssh|git(?:\+[^:]+)?|github|gitlab|bitbucket):/iu.test(specifier)
+    || /^(?:\.{1,2}|[a-z]:)$/iu.test(specifier)
     || /^(?:\.{1,2}[\\/]|[/\\]|~[\\/]|[a-z]:(?:[\\/]|(?=[^\\/])))/iu.test(specifier)
     || /^(?![~^<>=*|])[^:\s]+\.(?:tgz|tar(?:\.gz)?)$/iu.test(specifier)
     || /^[^@\s]+@[^:\s]+:.+/u.test(specifier)
-    || /^(?!@)[^:\s\\/]+[\\/][^\s]*$/u.test(specifier);
+    || /^[^:\s\\/]+[\\/][^\s]*$/u.test(specifier);
 }
 
 function inventoryFindings(

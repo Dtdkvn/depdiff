@@ -431,11 +431,22 @@ describe('analyzeDiff', () => {
     'foo/bar/',
     'foo\\bar',
     'foo\\bar\\baz',
+    '@foo/bar/baz',
+    '@foo/bar/',
+    '@foo\\bar',
+    '@foo\\bar\\baz',
+    '@foo/bar#x',
+    '@foo/bar\\baz',
+    '@foo/bar@file:..',
+    '@foo/bar@github:reviewed/source',
+    '.',
+    '..',
+    'C:',
   ])('classifies %s as a non-registry dependency source', (specifier) => {
     expect(__test.isNonRegistryDependencySpecifier(specifier)).toBe(true);
   });
 
-  it.each(['npm:reviewed-source@1.2.3', 'npm:@scope/reviewed-source@^1.2.3', '@scope/reviewed-source', '^1.2.3', '~1.2.3', '>=1.0.0', '1.2.3', 'latest', 'next'])('keeps %s in the registry-backed class', (specifier) => {
+  it.each(['npm:reviewed-source@1.2.3', 'npm:@scope/reviewed-source@^1.2.3', '@foo/bar', '@foo/bar@1.2.3', '@foo/bar@^1.2.3', '@foo/bar@>=1 <2', '@foo/bar@latest', '@scope/reviewed-source', '^1.2.3', '~1.2.3', '>=1.0.0', '1.2.3', 'latest', 'next'])('keeps %s in the registry-backed class', (specifier) => {
     expect(__test.isNonRegistryDependencySpecifier(specifier)).toBe(false);
   });
 });
