@@ -4,6 +4,9 @@ node_modules/
 coverage/
 .depdiff-cache/
 .depdiff-demo/
+depdiff-report.html
+reports/*
+!reports/.gitkeep
 *.log
 *.tgz
 .DS_Store
