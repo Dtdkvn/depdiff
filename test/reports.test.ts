@@ -44,6 +44,13 @@ describe('report formats', () => {
     expect(markdown).toContain('## Scope and limits');
   });
 
+  it('renders policy configuration warnings in human-readable reports', async () => {
+    const report = await audit(safe, risky, { offline: true });
+    report.policy.warnings = [{ rule: 'maxRiskScore-without-failOn', message: 'Add an explicit failOn severity.' }];
+    expect(renderMarkdown(report)).toContain('## Policy warnings');
+    expect(renderHtml(report)).toContain('Policy passed with a configuration warning');
+  });
+
   it('normalizes package-controlled newlines in Markdown contexts', async () => {
     const report = await audit(safe, risky, { offline: true });
     report.before.package.name = 'safe\n# forged approval';

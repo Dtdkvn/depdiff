@@ -6,6 +6,10 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) conventi
 
 ### Fixed
 
+- normalized host-only file mode differences while preserving executable transitions, so directory/tarball comparisons are identical on Windows, Docker Desktop bind mounts, and native Linux;
+- added a labeled detector benchmark with integrity-pinned benign releases, a human-vetted Datadog compromise sample, synthetic evasive cases, and enforced precision/recall/false-positive thresholds;
+- raised non-registry runtime dependencies to a dedicated high-severity finding and warned when `maxRiskScore` is configured without an explicit severity threshold;
+- made installed-tarball smoke tests exercise the actual `.bin` artifact on Windows and POSIX on every supported Node runtime;
 - ran the audit when the CLI is invoked through the installed `node_modules/.bin/depdiff` symlink, which previously exited 0 without analyzing anything, and made the packaged smoke test exercise that entry point;
 - failed closed when shipped code cannot be analyzed, instead of scoring it as clean: files are now classified by manifest entry point, shebang, and content rather than by extension alone, oversized and control-byte-heavy files keep a classifiable prefix, and a parse failure reports the lost coverage without discarding lexical capabilities;
 - resolved module loads reached through `require` aliases, member-expression loaders such as `process.mainModule.require` and `module.constructor._load`, computed loader properties, aliased code constructors, and statically foldable module names, so the real capability and severity are reported;

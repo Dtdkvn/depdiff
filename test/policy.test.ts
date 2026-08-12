@@ -42,6 +42,23 @@ describe('policy', () => {
     }
   });
 
+  it('warns when maxRiskScore is the only configured failure threshold', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'depdiff-policy-warning-'));
+    const scoreOnly = path.join(root, 'score-only.yml');
+    const explicitSeverity = path.join(root, 'severity.yml');
+    try {
+      await writeFile(scoreOnly, 'version: 1\nmaxRiskScore: 49\n');
+      await writeFile(explicitSeverity, 'version: 1\nmaxRiskScore: 49\nfailOn: high\n');
+      expect((await loadPolicy(scoreOnly, { ci: false })).warnings).toEqual([
+        expect.objectContaining({ rule: 'maxRiskScore-without-failOn' }),
+      ]);
+      expect((await loadPolicy(explicitSeverity, { ci: false })).warnings).toEqual([]);
+      expect((await loadPolicy(scoreOnly, { ci: false, failOn: 'high' })).warnings).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('enforces severity, capabilities, domains, scripts, and inventory limits', async () => {
     const report = await audit(safe, risky, { offline: true });
     const policy: Policy = {

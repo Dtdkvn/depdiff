@@ -181,6 +181,7 @@ function printSummary(report: DiffReport, options: CompareOptions): void {
   process.stdout.write(`\n  Policy ${report.policy.passed ? pc.green(pc.bold('PASS')) : pc.red(pc.bold('FAIL'))}`);
   if (!report.policy.passed) process.stdout.write(pc.dim(` · ${report.policy.violations.map((violation) => violation.rule).join(', ')}`));
   process.stdout.write('\n');
+  for (const warning of report.policy.warnings) process.stdout.write(`  ${pc.yellow('Policy warning')} ${terminalText(warning.message)}\n`);
   if (options.output) process.stdout.write(`  HTML   ${pc.cyan(path.resolve(options.output))}\n`);
   if (options.json) process.stdout.write(`  JSON   ${pc.cyan(path.resolve(options.json))}\n`);
   if (options.sarif) process.stdout.write(`  SARIF  ${pc.cyan(path.resolve(options.sarif))}\n`);
@@ -188,6 +189,9 @@ function printSummary(report: DiffReport, options: CompareOptions): void {
 }
 
 function emitAnnotations(report: DiffReport, workspace: string): void {
+  for (const warning of report.policy.warnings) {
+    process.stdout.write(`::warning title=${escapeWorkflow('Depdiff policy')}::${escapeWorkflow(warning.message)}\n`);
+  }
   for (const finding of report.findings.filter((item) => item.status === 'new' && ['critical', 'high', 'medium'].includes(item.severity))) {
     const evidence = finding.evidence[0];
     const kind = finding.severity === 'medium' ? 'warning' : 'error';

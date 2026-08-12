@@ -337,6 +337,23 @@ describe('analyzeDiff', () => {
     expect(second?.fingerprint).toBeDefined();
     expect(second?.fingerprint).not.toBe(first?.fingerprint);
   });
+
+  it('raises a high-severity finding for a newly added non-registry dependency', async () => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({ name: 'dependency-source', version: '1.0.0' }),
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({
+        name: 'dependency-source',
+        version: '1.1.0',
+        optionalDependencies: { setup: 'github:reviewed/source#0123456789abcdef' },
+      }),
+    });
+    const finding = (await audit(before, after, { offline: true })).findings.find(
+      (entry) => entry.id === 'dependencies.non-registry.added',
+    );
+    expect(finding).toMatchObject({ severity: 'high', tags: ['dependency', 'non-registry'] });
+  });
 });
 
 describe('entropy helper', () => {

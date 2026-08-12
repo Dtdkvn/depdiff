@@ -168,6 +168,7 @@ describe('distribution contracts', () => {
     expect(smoke).toContain('Packed Markdown target escapes the package');
     expect(smoke).toContain("'docs/assets/demo.gif'");
     expect(smoke).toContain("'docs/assets/report-preview.png'");
+    expect(smoke).toContain("'docs/precision-benchmark.md'");
   });
 });
 

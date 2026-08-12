@@ -28,7 +28,15 @@
         "baselineFindings": { "type": "integer", "minimum": 0 }
       }
     },
-    "policy": { "type": "object", "required": ["passed", "violations"] },
+    "policy": {
+      "type": "object",
+      "required": ["passed", "violations", "warnings"],
+      "properties": {
+        "passed": { "type": "boolean" },
+        "violations": { "type": "array" },
+        "warnings": { "type": "array", "items": { "type": "object", "required": ["rule", "message"] } }
+      }
+    },
     "analysis": {
       "type": "object",
       "required": ["offline", "packageCodeExecuted", "limits", "notes"],

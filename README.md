@@ -82,6 +82,8 @@ depdiff compare old.tgz new.tgz --offline \
 
 See the complete [CLI reference](docs/cli.md), [policy reference](docs/policy.md), and [rule catalog](docs/rules.md).
 
+Detector changes are gated by a [labeled precision benchmark](docs/precision-benchmark.md) that separates integrity-pinned benign npm releases, a human-vetted real compromise sample, and synthetic evasive regressions.
+
 ## Policy and exit codes
 
 ```yaml

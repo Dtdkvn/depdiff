@@ -19,6 +19,8 @@ Useful commands:
 - `npm run demo` — generate deterministic reports from hostile fixtures;
 - `npm test` — run the Vitest suite;
 - `npm run test:coverage` — run the enforced 80% line/statement, 85% function, and 70% branch coverage floor, including CLI behavior;
+- `npm run benchmark:precision` — run the deterministic labeled detector benchmark without network access;
+- `npm run benchmark:precision:registry` — add integrity-pinned real npm release pairs (network opt-in; target code is never installed or executed);
 - `npm run lint` / `npm run typecheck` / `npm run build` — individual gates;
 - `npm run check` — every required pre-PR gate.
 

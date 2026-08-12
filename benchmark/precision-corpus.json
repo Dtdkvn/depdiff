@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "maintainer": "Depdiff contributors",
+    "reviewedAt": "2026-08-12",
+    "method": "Clean cases are manually reviewed, exact npm release pairs. Hostile cases are minimal labeled fixtures designed to exercise distinct documented detector families without storing or executing real malware."
+  },
+  "thresholds": {
+    "precision": 0.8,
+    "recall": 1,
+    "falsePositiveRate": 0.2
+  },
+  "cases": [
+    {
+      "id": "fixture-noop-release",
+      "kind": "fixture",
+      "label": "clean",
+      "before": "fixtures/safe-v1",
+      "after": "fixtures/safe-v1"
+    },
+    {
+      "id": "fixture-install-exfil",
+      "kind": "fixture",
+      "label": "alert",
+      "before": "fixtures/safe-v1",
+      "after": "fixtures/risky-v2",
+      "expectedRules": ["install-script.added", "capability.added.child_process", "network.domains.added"]
+    },
+    {
+      "id": "fixture-obfuscated-loader",
+      "kind": "fixture",
+      "label": "alert",
+      "before": "benchmark/fixtures/obfuscated-loader/before",
+      "after": "benchmark/fixtures/obfuscated-loader/after",
+      "expectedRules": ["capability.added.child_process", "capability.added.dynamic-code", "network.domains.added"]
+    },
+    {
+      "id": "fixture-native-executable",
+      "kind": "fixture",
+      "label": "alert",
+      "before": "benchmark/fixtures/native-executable/before",
+      "after": "benchmark/fixtures/native-executable/after",
+      "expectedRules": ["binary.native.added"]
+    },
+    {
+      "id": "npm-picocolors",
+      "kind": "registry",
+      "label": "clean",
+      "before": "picocolors@1.0.1",
+      "after": "picocolors@1.1.1",
+      "integrity": {
+        "before": "sha512-anP1Z8qwhkbmu7MFP5iTt+wQKXgwzf7zTyGlcdzabySa9vd0Xt392U0rVmz9poOaBj0uHJKyyo9/upk0HrEQew==",
+        "after": "sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA=="
+      }
+    },
+    {
+      "id": "npm-kleur",
+      "kind": "registry",
+      "label": "clean",
+      "before": "kleur@4.1.4",
+      "after": "kleur@4.1.5",
+      "integrity": {
+        "before": "sha512-8QADVssbrFjivHWQU7KkMgptGTl6WAcSdlbBPY4uNF+mWr6DGcKrvY2w4FQJoXch7+fKMjj0dRrL75vk3k23OA==",
+        "after": "sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ=="
+      }
+    },
+    {
+      "id": "npm-yocto-queue",
+      "kind": "registry",
+      "label": "clean",
+      "before": "yocto-queue@1.1.1",
+      "after": "yocto-queue@1.2.1",
+      "integrity": {
+        "before": "sha512-b4JR1PFR10y1mKjhHY9LaGo6tmrgjit7hxVIeAmyMw3jegXR4dhYqLaQF5zMXZxY7tLpMyJeLjr1C4rLmkVe8g==",
+        "after": "sha512-AyeEbWOu/TAXdxlV9wmGcR0+yh2j3vYPGOECcIj2S7MkrLyC7ne+oye2BKTItt0ii2PHk4cDy+95+LshzbXnGg=="
+      }
+    },
+    {
+      "id": "npm-escape-string-regexp",
+      "kind": "registry",
+      "label": "clean",
+      "before": "escape-string-regexp@4.0.0",
+      "after": "escape-string-regexp@5.0.0",
+      "integrity": {
+        "before": "sha512-TtpcNJ3XAzx3Gq8sWRzJaVajRs0uVxA2YAkdb1jm2YkPz4G6egUFAyA3n5vtEIZefPk5Wa4UXbKuS5fKkJWdgA==",
+        "after": "sha512-/veY75JbMK4j1yjvuUxuVsiS/hr/4iHs9FTT6cgTexxdE0Ly/glccBAkloH/DofkjRbZU3bnoj38mOmhkZ0lHw=="
+      }
+    },
+    {
+      "id": "npm-is-number",
+      "kind": "registry",
+      "label": "clean",
+      "before": "is-number@6.0.0",
+      "after": "is-number@7.0.0",
+      "integrity": {
+        "before": "sha512-Wu1VHeILBK8KAWJUAiSZQX94GmOE45Rg6/538fKwiloUu21KncEkYGPqob2oSZ5mUT73vLGrHQjKw3KMPwfDzg==",
+        "after": "sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng=="
+      }
+    },
+    {
+      "id": "datadog-jest-date-mock-compromise",
+      "kind": "dataset",
+      "label": "alert",
+      "before": "jest-date-mock@1.0.10",
+      "after": "jest-date-mock@1.0.11",
+      "integrity": {
+        "before": "sha512-g0CM7mJHppz8SCayrtJ0Wm2ge8T0SiKCR9bmVLeflipqWjZ8hieNk6vBF0t3dJFc5jlsjvzTbRud8kPjoD0VgA=="
+      },
+      "expectedRules": ["dependencies.non-registry.added"],
+      "dataset": {
+        "repository": "https://github.com/DataDog/malicious-software-packages-dataset",
+        "license": "Apache-2.0",
+        "commit": "719a5601e2df22edfb654bf330205a2d33639052",
+        "manifestPath": "samples/npm/manifest.json",
+        "manifestSha256": "a682494d278a79bef38d9c498b8242c85d60c7b2521cf9f4295ab5ab7f6869d1",
+        "samplePath": "samples/npm/compromised_lib/jest-date-mock/1.0.11/2026-05-19-jest-date-mock-v1.0.11.zip",
+        "sampleSha256": "a9afe233c66043bade6bd224f8a88244d7b58d9c8debb1ce6c2606e1ade47df4",
+        "packageName": "jest-date-mock",
+        "version": "1.0.11"
+      }
+    }
+  ]
+}

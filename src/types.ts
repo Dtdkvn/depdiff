@@ -154,6 +154,7 @@ export interface PolicyResult {
   passed: boolean;
   policyPath?: string;
   violations: PolicyViolation[];
+  warnings: Array<{ rule: string; message: string }>;
 }
 
 export interface DiffReport {

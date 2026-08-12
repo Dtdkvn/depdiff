@@ -51,8 +51,9 @@ includeBaseline: false
 export async function loadPolicy(
   policyPath: string | undefined,
   overrides: { failOn?: Severity | 'never'; ci: boolean },
-): Promise<{ policy: Policy; path?: string }> {
+): Promise<{ policy: Policy; path?: string; warnings: Array<{ rule: string; message: string }> }> {
   let policy = { ...DEFAULT_POLICY };
+  const warnings: Array<{ rule: string; message: string }> = [];
   let resolvedPath: string | undefined;
   if (policyPath) {
     resolvedPath = path.resolve(policyPath);
@@ -65,12 +66,18 @@ export async function loadPolicy(
     } catch (error) {
       throw new UserError(`Cannot parse policy ${policyPath}: ${error instanceof Error ? error.message : String(error)}`);
     }
+    if (isRecord(parsed) && Object.hasOwn(parsed, 'maxRiskScore') && !Object.hasOwn(parsed, 'failOn') && overrides.failOn === undefined) {
+      warnings.push({
+        rule: 'maxRiskScore-without-failOn',
+        message: 'maxRiskScore is configured without failOn. Scores prioritize review, so one high or critical finding can remain below an aggregate score threshold; add an explicit failOn severity unless that is intentional.',
+      });
+    }
     policy = validatePolicy(parsed);
   } else if (overrides.ci) {
     policy.failOn = 'high';
   }
   if (overrides.failOn !== undefined) policy.failOn = overrides.failOn;
-  return { policy, ...(resolvedPath ? { path: resolvedPath } : {}) };
+  return { policy, ...(resolvedPath ? { path: resolvedPath } : {}), warnings };
 }
 
 export function validatePolicy(value: unknown): Policy {
@@ -135,7 +142,12 @@ export function applyBaseline(report: DiffReport, baseline: Baseline | undefined
   report.risk = summarizeRisk(report.findings);
 }
 
-export function evaluatePolicy(report: DiffReport, policy: Policy, policyPath?: string): PolicyResult {
+export function evaluatePolicy(
+  report: DiffReport,
+  policy: Policy,
+  policyPath?: string,
+  warnings: Array<{ rule: string; message: string }> = [],
+): PolicyResult {
   const findings = report.findings.filter((finding) => {
     if (!policy.includeBaseline && finding.status === 'baseline') return false;
     return !matchesIgnore(finding, policy.ignoreFindings);
@@ -193,7 +205,7 @@ export function evaluatePolicy(report: DiffReport, policy: Policy, policyPath?: 
     rule: 'maxAddedFiles', message: `${report.inventory.added.length} files were added; maximum is ${policy.maxAddedFiles}.`,
     findingFingerprints: findings.filter((finding) => finding.category === 'inventory' || finding.category === 'binary').map((finding) => finding.fingerprint),
   });
-  return { passed: violations.length === 0, ...(policyPath ? { policyPath } : {}), violations };
+  return { passed: violations.length === 0, ...(policyPath ? { policyPath } : {}), violations, warnings };
 }
 
 export async function writeBaseline(filePath: string, report: DiffReport): Promise<void> {

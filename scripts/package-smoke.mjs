@@ -129,7 +129,7 @@ function runBin(entry, args, cwd) {
 async function validatePackedDocumentation(packageRoot) {
   const required = [
     'README.md', 'SECURITY.md', 'CONTRIBUTING.md', 'CODE_OF_CONDUCT.md', 'CHANGELOG.md',
-    'docs/architecture.md', 'docs/cli.md', 'docs/policy.md', 'docs/rules.md', 'docs/releasing.md',
+    'docs/architecture.md', 'docs/cli.md', 'docs/policy.md', 'docs/precision-benchmark.md', 'docs/rules.md', 'docs/releasing.md',
     'docs/assets/demo.gif', 'docs/assets/report-preview.png', 'examples/github-action.yml',
   ];
   for (const relative of required) await requirePackedTarget(packageRoot, relative, 'package manifest');

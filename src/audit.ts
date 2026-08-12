@@ -29,7 +29,7 @@ export async function audit(beforeInput: string, afterInput: string, options: Au
     localIgnore: DEFAULT_IGNORES,
     ignore: options.ignore ?? [],
   };
-  const [{ policy, path: policyPath }, baseline, before, after] = await Promise.all([
+  const [{ policy, path: policyPath, warnings: policyWarnings }, baseline, before, after] = await Promise.all([
     loadPolicy(options.policyPath, { ...(options.failOn !== undefined ? { failOn: options.failOn } : {}), ci: options.ci ?? false }),
     loadBaseline(options.baselinePath),
     resolvePackageSource(beforeInput, resolveOptions),
@@ -40,6 +40,6 @@ export async function audit(beforeInput: string, afterInput: string, options: Au
     : new Date().toISOString();
   const report = analyzeDiff(before, after, { generatedAt, offline, resolveOptions });
   applyBaseline(report, baseline);
-  report.policy = evaluatePolicy(report, policy, policyPath);
+  report.policy = evaluatePolicy(report, policy, policyPath, policyWarnings);
   return report;
 }

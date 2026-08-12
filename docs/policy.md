@@ -29,6 +29,8 @@ includeBaseline: false
 - `ignoreFindings`: exact or globbed rule IDs/fingerprints excluded only from policy.
 - `includeBaseline`: when true, accepted baseline findings are evaluated again.
 
+If a policy sets `maxRiskScore` without `failOn`, Depdiff emits a configuration warning but preserves the requested behavior. Risk scores prioritize a review queue; they are not severity levels, so one high or critical finding can score below an aggregate threshold. Add an explicit `failOn` when every finding at or above a severity must fail CI.
+
 ## Baselines
 
 A baseline contains stable finding fingerprints and minimal human labels. It does not hide findings: accepted findings remain visible with `status: baseline`, but they do not contribute to current risk or default policy evaluation.
