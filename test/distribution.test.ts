@@ -68,6 +68,7 @@ describe('distribution contracts', () => {
       expect(dockerfile).toContain('rm -rf /usr/local/lib/node_modules/npm');
       expect(dockerfile).toContain('rm -f /usr/local/bin/npm');
     }
+    expect(await projectFile('Dockerfile')).toContain('find /app/fixtures -type f -exec chmod 0644');
   });
 
   it('uses the canonical repository in package, report, schema, and contributor metadata', async () => {

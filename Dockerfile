@@ -33,7 +33,9 @@ RUN --mount=type=cache,id=depdiff-runtime-npm,target=/root/.npm,sharing=locked \
     && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg
 COPY --from=build /app/dist ./dist
 COPY fixtures ./fixtures
-RUN mkdir -p /work /reports && chown -R depdiff:depdiff /app /work /reports
+RUN find /app/fixtures -type f -exec chmod 0644 {} + \
+    && mkdir -p /work /reports \
+    && chown -R depdiff:depdiff /app /work /reports
 USER depdiff
 WORKDIR /work
 ENTRYPOINT ["node", "/app/dist/cli.js"]
