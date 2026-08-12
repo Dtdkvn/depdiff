@@ -540,7 +540,7 @@ async function scanDirectory(
           path: relative,
           size: Buffer.byteLength(target),
           sha256: sha256(target),
-          mode: details.mode,
+          mode: normalizePackageMode(details.mode, 'symlink'),
           kind: 'symlink',
         });
         continue;
@@ -571,7 +571,7 @@ async function scanDirectory(
         path: relative,
         size: details.size,
         sha256: sha256(buffer),
-        mode: details.mode,
+        mode: normalizePackageMode(details.mode, kind),
         kind,
         // Files past the analyzed-text limit still keep a copied prefix so the
         // analyzer can classify them (shebang, JS shape) and fail closed.
@@ -598,6 +598,18 @@ async function scanDirectory(
       totalBytes,
     },
   };
+}
+
+/**
+ * Package archives only have a portable executable/non-executable distinction.
+ * Hosts add unrelated file-type and write bits (for example, Docker Desktop
+ * bind mounts expose Windows files as 0777 while a portable tar stores 0755).
+ * Canonicalizing those equivalent modes keeps snapshots host-independent while
+ * preserving the executable transition that the analyzer reports.
+ */
+function normalizePackageMode(mode: number, kind: LoadedFile['kind']): number {
+  if (kind === 'symlink') return 0o777;
+  return (mode & 0o111) !== 0 ? 0o755 : 0o644;
 }
 
 function parsePackageMetadata(buffer: Buffer | undefined, source: SourceDescriptor): PackageMetadata {
@@ -681,4 +693,5 @@ export const __test = {
   fetchWithTimeout,
   readRegistryDocument,
   verifyArchiveDigest,
+  normalizePackageMode,
 };

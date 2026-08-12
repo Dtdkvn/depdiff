@@ -261,3 +261,16 @@ describe('text detection', () => {
     expect(__test.isProbablyText(Buffer.from([0, 1, 2, 3]))).toBe(false);
   });
 });
+
+describe('portable package modes', () => {
+  it('normalizes host-only permission differences without hiding executable transitions', () => {
+    expect(__test.normalizePackageMode(0o100777, 'text')).toBe(0o755);
+    expect(__test.normalizePackageMode(0o100755, 'text')).toBe(0o755);
+    expect(__test.normalizePackageMode(0o100666, 'text')).toBe(0o644);
+    expect(__test.normalizePackageMode(0o100644, 'text')).toBe(0o644);
+    expect(__test.normalizePackageMode(0o120777, 'symlink')).toBe(0o777);
+    expect(__test.normalizePackageMode(0o100644, 'text')).not.toBe(
+      __test.normalizePackageMode(0o100755, 'text'),
+    );
+  });
+});
