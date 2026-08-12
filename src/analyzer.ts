@@ -727,7 +727,7 @@ function isNonRegistryDependencySpecifier(value: string | undefined): boolean {
     || /^(?:\.{1,2}[\\/]|[/\\]|~[\\/]|[a-z]:(?:[\\/]|(?=[^\\/])))/iu.test(specifier)
     || /^(?![~^<>=*|])[^:\s]+\.(?:tgz|tar(?:\.gz)?)$/iu.test(specifier)
     || /^[^@\s]+@[^:\s]+:.+/u.test(specifier)
-    || /^[^@\s/]+\/[^\s/]+(?:#.*)?$/u.test(specifier);
+    || /^(?!@)[^:\s\\/]+[\\/][^\s]*$/u.test(specifier);
 }
 
 function inventoryFindings(
