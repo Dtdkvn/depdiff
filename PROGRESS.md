@@ -13,6 +13,7 @@ Last updated: 2026-08-12
 - Archive snapshots: scan all shipped tarball paths, while ergonomic default ignores remain limited to local working directories.
 - CI distribution: Docker Action inputs are explicit, third-party Actions/base images are immutable, and release tags must match `package.json`.
 - Repository state: the public source repository is `https://github.com/Dtdkvn/depdiff`, `main` tracks `origin/main`, and `v0.1.0` is live as an npm package, GitHub release, and reviewed Action tag. The npm registry `dist.shasum` is `dbbe8cfd97f81f114c18fa8db670904734faa155`.
+- Release authentication: the bootstrap token is revoked, the GitHub `npm` environment has no `NPM_TOKEN`, and the workflow has no token fallback. It is OIDC-only and will fail closed at `npm publish` until the npm account completes 2FA/confirmation and registers the trusted publisher.
 
 ## v0.1 status
 
@@ -27,7 +28,7 @@ Last updated: 2026-08-12
 
 ## Known follow-ups
 
-- Complete the npm trusted-publisher cutover after the publisher account confirmation, then remove the temporary bootstrap credential.
+- Complete npm publisher-account 2FA/confirmation, then register `Dtdkvn/depdiff`, `release.yml`, and environment `npm` as the trusted publisher before creating the next release tag.
 - Add private-registry blob-host allowlists based on real user demand.
 - Add native binary inspection adapters without changing the no-execution invariant.
 - Expand detector precision benchmarking beyond the current selection-biased 10-case corpus.

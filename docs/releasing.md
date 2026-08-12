@@ -25,6 +25,6 @@ Never rebuild or repack between verification and publication.
 
 ## Credentials and provenance
 
-The current workflow reads the environment-scoped `NPM_TOKEN` only in the final registry-check/publish step. Keep the `npm` GitHub environment protected and scope the token to this package with the minimum publish permission. The job grants `id-token: write` solely for npm provenance.
+The release workflow is OIDC-only: it grants `id-token: write` and deliberately provides no `NPM_TOKEN`, `NODE_AUTH_TOKEN`, or other publish credential. The npm account's bootstrap token has been revoked and the GitHub `npm` environment no longer contains that secret. Do not add a token fallback.
 
-The preferred migration is npm trusted publishing. Configure `Dtdkvn/depdiff`, workflow `release.yml`, and environment `npm` as an npm trusted publisher; then remove the `NPM_TOKEN` secret, the final step's `NODE_AUTH_TOKEN`, and the token-presence guard in `scripts/publish-release.mjs`. Keep provenance and the same tag, ancestry, tarball, and shasum checks.
+Trusted-publisher registration is not complete yet because the npm publisher account still requires its external 2FA/account confirmation. Before creating another release tag, register package `depdiff-audit` on npm with GitHub owner/repository `Dtdkvn/depdiff`, workflow filename `release.yml`, environment `npm`, and `npm publish` permission. Until that exact trust relationship exists, the final `npm publish` command is expected to fail authentication after the workflow has safely verified and preserved the artifact. Keep the same tag, ancestry, single-tarball, provenance, and post-publish shasum checks when the registration is completed.

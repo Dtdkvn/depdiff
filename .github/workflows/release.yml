@@ -50,5 +50,3 @@ jobs:
           "${{ steps.verify.outputs.name }}"
           "${{ steps.verify.outputs.version }}"
           "${{ steps.pack.outputs.shasum }}"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -137,25 +137,28 @@ describe('distribution contracts', () => {
 
     const parsed = parseYaml(release) as {
       permissions: Record<string, string>;
-      jobs: { npm: { steps: Array<{ uses?: string; with?: Record<string, unknown> }> } };
+      jobs: { npm: { environment: string; steps: Array<{ uses?: string; with?: Record<string, unknown> }> } };
     };
     expect(parsed.permissions).toEqual({ contents: 'read', 'id-token': 'write' });
+    expect(parsed.jobs.npm.environment).toBe('npm');
     const checkout = parsed.jobs.npm.steps.find((step) => step.uses?.startsWith('actions/checkout@'));
     expect(checkout?.with).toMatchObject({ 'fetch-depth': 0, 'persist-credentials': false });
     const setupNode = parsed.jobs.npm.steps.find((step) => step.uses?.startsWith('actions/setup-node@'));
     expect(setupNode?.with?.['node-version']).toBe(24);
-    expect(release.match(/NODE_AUTH_TOKEN/g)).toHaveLength(1);
+    expect(release).not.toContain('NODE_AUTH_TOKEN');
+    expect(release).not.toContain('NPM_TOKEN');
+    expect(release).not.toContain('${{ secrets.');
     const verifyIndex = release.indexOf('scripts/verify-release.mjs');
     const installIndex = release.indexOf('npm ci --ignore-scripts');
     const packIndex = release.indexOf('scripts/pack-release.mjs');
     const smokeIndex = release.indexOf('scripts/package-smoke.mjs');
     const uploadIndex = release.indexOf('actions/upload-artifact@');
-    const tokenIndex = release.indexOf('NODE_AUTH_TOKEN');
+    const publishIndex = release.indexOf('scripts/publish-release.mjs');
     expect(verifyIndex).toBeLessThan(installIndex);
     expect(installIndex).toBeLessThan(packIndex);
     expect(packIndex).toBeLessThan(smokeIndex);
     expect(smokeIndex).toBeLessThan(uploadIndex);
-    expect(uploadIndex).toBeLessThan(tokenIndex);
+    expect(uploadIndex).toBeLessThan(publishIndex);
     expect(release).toContain('scripts/pack-release.mjs');
     expect(release).toContain('scripts/package-smoke.mjs "${{ steps.pack.outputs.tarball }}"');
     expect(release).toContain('scripts/publish-release.mjs');
@@ -182,6 +185,7 @@ describe('distribution contracts', () => {
     expect(publisher).toContain("'publish', tarball");
     expect(publisher).toContain("'--provenance'");
     expect(publisher).toContain('Release tarball changed after the pack step.');
+    expect(publisher).not.toContain('NODE_AUTH_TOKEN');
   });
 
   it('packs all user-facing documentation and validates local Markdown targets', async () => {

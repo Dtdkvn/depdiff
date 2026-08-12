@@ -70,7 +70,8 @@ Its full benchmark is intentionally modest: 10 labeled cases, including exactly 
 
 - [x] Publish `depdiff-audit@0.1.0` under the verified npm account.
 - [x] Follow the [release integrity procedure](releasing.md): exact SemVer tag, main ancestry, one verified tarball, provenance, and post-publish shasum verification (`dbbe8cfd97f81f114c18fa8db670904734faa155`).
-- [ ] Finish the npm trusted-publisher cutover after publisher account confirmation, then remove the temporary bootstrap credential.
+- [x] Revoke the temporary bootstrap token, remove the GitHub environment secret, and make the release workflow OIDC-only with no token fallback.
+- [ ] Complete the npm account 2FA/confirmation and register the exact `Dtdkvn/depdiff` / `release.yml` / `npm` trusted publisher. Future release publishes intentionally fail authentication until this external registration is complete.
 - [x] Install the published package in a clean directory and verify the `depdiff` binary, ESM import, types, demo, and package contents.
 - [x] Verify `npx depdiff-audit@0.1.0 demo --no-fail` works before adding the npm badge and removing the pre-release notice.
 - [ ] Run the hosted Action from a separate test repository, pinned to a reviewed full SHA, and verify annotations plus HTML/SARIF artifacts.

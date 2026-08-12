@@ -30,10 +30,6 @@ if (existing.state === 'present') {
   process.stdout.write(`Registry already contains the identical tarball ${localShasum}; publication skipped.\n`);
   process.exit(0);
 }
-if (!process.env.NODE_AUTH_TOKEN) {
-  throw new Error('NODE_AUTH_TOKEN is required for the current token-based publishing workflow.');
-}
-
 const published = spawnNpm([
   'publish', tarball, '--provenance', '--access', 'public', '--registry=https://registry.npmjs.org/', '--ignore-scripts',
 ], { cwd: projectRoot, encoding: 'utf8', env: process.env, stdio: 'inherit', windowsHide: true });
