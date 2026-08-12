@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, lstat, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, lstat, readFile, readdir, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -51,12 +51,16 @@ try {
     throw new Error(`Packed CLI version ${version} does not match package version ${packageDocument.version}.`);
   }
 
+  const safeFixture = path.join(installedPackage, 'fixtures', 'safe-v1');
+  const riskyFixture = path.join(installedPackage, 'fixtures', 'risky-v2');
+  await verifyBinEntryPoint({ installRoot, temporary, cli, packageDocument, safeFixture, riskyFixture });
+
   const reportPath = path.join(temporary, 'smoke.json');
   run(process.execPath, [
     cli,
     'compare',
-    path.join(installedPackage, 'fixtures', 'safe-v1'),
-    path.join(installedPackage, 'fixtures', 'risky-v2'),
+    safeFixture,
+    riskyFixture,
     '--offline', '--json', reportPath, '--output', path.join(temporary, 'smoke.html'), '--no-fail', '--quiet',
   ], installRoot);
   const report = JSON.parse(await readFile(reportPath, 'utf8'));
@@ -70,6 +74,53 @@ try {
   process.stdout.write(`Packed ${filename}: CLI ${version}, ${report.findings.length} findings, ${validatedLinks} local documentation targets verified.\n`);
 } finally {
   await rm(temporary, { recursive: true, force: true });
+}
+
+/**
+ * Consumers reach the CLI through `node_modules/.bin/depdiff`, which npm creates
+ * as a symlink on POSIX. Invoking only the real `dist/cli.js` path cannot catch
+ * an entry-point guard that fails for symlinks, and asserting a zero exit code
+ * cannot catch it either, because a silent no-op also exits 0. So this checks
+ * real stdout through the link and a non-zero exit on a failing policy.
+ */
+async function verifyBinEntryPoint({ installRoot, temporary, cli, packageDocument, safeFixture, riskyFixture }) {
+  const binEntry = path.join(installRoot, 'node_modules', '.bin', 'depdiff');
+  const binDetails = await lstat(binEntry).catch(() => undefined);
+  if (!binDetails) throw new Error('npm install did not create node_modules/.bin/depdiff.');
+
+  let entry = binEntry;
+  if (!binDetails.isSymbolicLink()) {
+    // Windows installs shell/cmd shims that pass the real path, so build an
+    // equivalent symlink to keep covering the guard where it is possible.
+    entry = path.join(temporary, 'binlink', 'depdiff');
+    await mkdir(path.dirname(entry), { recursive: true });
+    try {
+      await symlink(cli, entry, 'file');
+    } catch (error) {
+      if (error?.code === 'EPERM' || error?.code === 'ENOSYS') {
+        process.stdout.write('Skipping .bin symlink check: this host does not permit creating file symlinks.\n');
+        return;
+      }
+      throw error;
+    }
+  }
+
+  const version = run(process.execPath, [entry, '--version'], installRoot).trim();
+  if (version !== packageDocument.version) {
+    throw new Error(
+      `CLI invoked through ${entry} printed ${JSON.stringify(version)} instead of ${packageDocument.version}; the .bin entry point is not executing the CLI.`,
+    );
+  }
+  const failing = spawnSync(process.execPath, [
+    entry, 'compare', safeFixture, riskyFixture,
+    '--offline', '--fail-on', 'high', '--quiet', '--output', path.join(temporary, 'binlink.html'),
+  ], { cwd: installRoot, encoding: 'utf8', env: process.env, windowsHide: true });
+  if (failing.error) throw failing.error;
+  if (failing.status !== 1) {
+    throw new Error(
+      `CLI invoked through ${entry} exited ${failing.status} on a failing policy; expected 1. A silent no-op also exits 0.\n${failing.stderr || failing.stdout}`,
+    );
+  }
 }
 
 async function validatePackedDocumentation(packageRoot) {

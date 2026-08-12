@@ -6,6 +6,7 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) conventi
 
 ### Fixed
 
+- ran the audit when the CLI is invoked through the installed `node_modules/.bin/depdiff` symlink, which previously exited 0 without analyzing anything, and made the packaged smoke test exercise that entry point;
 - made the Docker Action conform to GitHub's Dockerfile/input contract and preserve policy thresholds;
 - prevented archive-root/default-ignore, oversized-manifest, changed-binary, and baseline-fingerprint false negatives;
 - validated redirects before requests, streamed registry metadata through its cap, and hardened strongest-digest verification;

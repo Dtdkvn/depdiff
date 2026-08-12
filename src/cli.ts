@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -248,7 +249,31 @@ function isCommanderExit(error: unknown): error is { exitCode: number } {
   return Boolean(error && typeof error === 'object' && 'code' in error && String(error.code).startsWith('commander.') && 'exitCode' in error && typeof error.exitCode === 'number');
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+/**
+ * True when this module is the process entry point.
+ *
+ * `process.argv[1]` is the path the user invoked. After `npm install` that is
+ * the `node_modules/.bin/depdiff` symlink, while `import.meta.url` is already
+ * canonicalized by the module loader, so comparing raw resolved paths never
+ * matched and the installed CLI exited 0 without auditing anything. Both sides
+ * are canonicalized through the filesystem here, and device/inode identity also
+ * covers hard-linked bin entries. The guard is kept so that importing this
+ * module from another module still does not run the CLI.
+ */
+export function isProcessEntryPoint(moduleFile: string, entry: string | undefined): boolean {
+  if (!entry) return false;
+  if (path.resolve(entry) === moduleFile) return true;
+  try {
+    if (realpathSync(entry) === realpathSync(moduleFile)) return true;
+    const invoked = statSync(entry);
+    const own = statSync(moduleFile);
+    return invoked.ino !== 0 && invoked.dev === own.dev && invoked.ino === own.ino;
+  } catch {
+    return false;
+  }
+}
+
+if (isProcessEntryPoint(fileURLToPath(import.meta.url), process.argv[1])) {
   runCli().then((code) => { process.exitCode = code; }).catch((error: unknown) => {
     process.stderr.write(`${pc.red('depdiff internal error:')} ${errorMessage(error)}\n`);
     process.exitCode = 3;

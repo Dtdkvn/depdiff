@@ -1,10 +1,10 @@
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runCli } from '../src/cli.js';
+import { isProcessEntryPoint, runCli } from '../src/cli.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cli = path.join(projectRoot, 'src', 'cli.ts');
@@ -52,6 +52,51 @@ describe('CLI contract', () => {
     expect(await readFile(policy, 'utf8')).toContain('version: 1');
   });
 
+  it('runs the audit when invoked through an npm .bin style symlink', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'depdiff-cli-binlink-'));
+    temporaryPaths.push(root);
+    const link = path.join(root, 'depdiff');
+    try {
+      await symlink(cli, link, 'file');
+    } catch (error) {
+      // Creating file symlinks needs elevation on Windows; the Linux gate covers this.
+      if ((error as { code?: string }).code === 'EPERM') return;
+      throw error;
+    }
+
+    const version = await runProcess(['--version'], projectRoot, link);
+    expect(version.stdout.trim()).toBe('0.1.0');
+    expect(version.code).toBe(0);
+
+    // A silent no-op also exits 0, so the failing-policy exit code is the real assertion.
+    const audit = await runProcess([
+      'compare', safe, risky, '--offline', '--ci', '--output', path.join(root, 'report.html'),
+    ], projectRoot, link);
+    expect(audit.code).toBe(1);
+    expect(audit.stdout).toContain('CRITICAL');
+    expect(audit.stdout).toContain('Policy');
+    await expect(readFile(path.join(root, 'report.html'), 'utf8')).resolves.toContain('Depdiff');
+  });
+
+  it('does not run the audit when the CLI module is only imported', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'depdiff-cli-import-'));
+    temporaryPaths.push(root);
+    // `.mts` so the probe is treated as ESM outside the project directory.
+    const probe = path.join(root, 'probe.mts');
+    await writeFile(probe, `await import(${JSON.stringify(pathToFileURL(cli).href)});\nprocess.stdout.write('imported');\n`, 'utf8');
+    const result = await runProcess([], projectRoot, probe);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toBe('imported');
+  });
+
+  it('identifies the process entry point through symlinks but not through imports', () => {
+    const self = fileURLToPath(import.meta.url);
+    expect(isProcessEntryPoint(self, self)).toBe(true);
+    expect(isProcessEntryPoint(self, undefined)).toBe(false);
+    expect(isProcessEntryPoint(self, cli)).toBe(false);
+    expect(isProcessEntryPoint(self, path.join(projectRoot, 'does-not-exist.mjs'))).toBe(false);
+  });
+
   it('keeps package-controlled newlines and ANSI controls on one safe terminal line', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'depdiff-cli-terminal-'));
     temporaryPaths.push(root);
@@ -71,9 +116,13 @@ describe('CLI contract', () => {
   });
 });
 
-async function runProcess(arguments_: string[], cwd = projectRoot): Promise<{ code: number; stdout: string; stderr: string }> {
+async function runProcess(
+  arguments_: string[],
+  cwd = projectRoot,
+  entry = cli,
+): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [tsx, cli, ...arguments_], {
+    const child = spawn(process.execPath, [tsx, entry, ...arguments_], {
       cwd,
       env: { ...process.env, NO_COLOR: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
