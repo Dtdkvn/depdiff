@@ -18,7 +18,7 @@ Useful commands:
 - `npm run dev -- compare <before> <after>` — run TypeScript directly;
 - `npm run demo` — generate deterministic reports from hostile fixtures;
 - `npm test` — run the Vitest suite;
-- `npm run test:coverage` — run the enforced coverage gate, including CLI behavior;
+- `npm run test:coverage` — run the enforced 80% line/statement, 85% function, and 70% branch coverage floor, including CLI behavior;
 - `npm run lint` / `npm run typecheck` / `npm run build` — individual gates;
 - `npm run check` — every required pre-PR gate.
 
