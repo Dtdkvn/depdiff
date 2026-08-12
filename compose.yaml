@@ -2,6 +2,7 @@ services:
   depdiff:
     build:
       context: .
+      dockerfile: Dockerfile.cli
     image: depdiff:local
     user: "${DEPDIFF_UID:-1000}:${DEPDIFF_GID:-1000}"
     read_only: true

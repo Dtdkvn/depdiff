@@ -12,7 +12,7 @@ Last updated: 2026-08-12
 - Risk score: capped review-priority score, explicitly not a malware probability.
 - Archive snapshots: scan all shipped tarball paths, while ergonomic default ignores remain limited to local working directories.
 - CI distribution: Docker Action inputs are explicit, third-party Actions/base images are immutable, and release tags must match `package.json`.
-- Repository state: the expected canonical repository is `https://github.com/Dtdkvn/depdiff`, but this local Git repository currently has no remote configured and has not been pushed or published to npm.
+- Repository state: the public source repository is `https://github.com/Dtdkvn/depdiff`, and source is the current distribution. This local checkout intentionally has no configured remote. The `depdiff-audit` npm package, `v0.1.0` tag, and first reviewed Action release are not published yet.
 
 ## v0.1 status
 
@@ -23,7 +23,7 @@ Last updated: 2026-08-12
 - [x] Docker, Compose, GitHub Action, CI/release workflows
 - [x] Offline fixtures and test suite
 - [x] Launch README, architecture, security, contributor, and reference docs
-- [x] MIT license and package publication metadata (prepared locally; not published)
+- [x] MIT license, public GitHub source, and package publication metadata (npm package and release tag still pending)
 
 ## Known follow-ups
 

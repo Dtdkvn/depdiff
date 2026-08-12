@@ -15,7 +15,8 @@ describe('distribution contracts', () => {
       runs: { using: string; image: string; args: string[] };
     };
     expect(action.runs.using).toBe('docker');
-    expect(path.basename(action.runs.image)).toBe('Dockerfile');
+    expect(action.runs.image).toBe('Dockerfile');
+    expect(path.dirname(path.resolve(projectRoot, action.runs.image))).toBe(projectRoot);
     await expect(access(path.join(projectRoot, action.runs.image))).resolves.toBeUndefined();
     expect(action.runs.args).toHaveLength(8);
     expect(action.runs.args.join('\n')).toContain('inputs.before');
@@ -24,6 +25,12 @@ describe('distribution contracts', () => {
     const entrypoint = await projectFile('scripts/action-entrypoint.mjs');
     expect(entrypoint).not.toContain('INPUT_FAIL_ON');
     expect(entrypoint).toContain("addOptional(args, '--fail-on', failOn)");
+    expect(await projectFile(action.runs.image)).toContain('COPY scripts/action-entrypoint.mjs ./scripts/action-entrypoint.mjs');
+    expect(await projectFile(action.runs.image)).toContain('ENTRYPOINT ["node", "/app/scripts/action-entrypoint.mjs"]');
+    const compose = parseYaml(await projectFile('compose.yaml')) as {
+      services: { depdiff: { build: { context: string; dockerfile: string } } };
+    };
+    expect(compose.services.depdiff.build).toEqual({ context: '.', dockerfile: 'Dockerfile.cli' });
     const missingInput = spawnSync(process.execPath, [path.join(projectRoot, 'scripts', 'action-entrypoint.mjs')], { encoding: 'utf8' });
     expect(missingInput.status).toBe(2);
     expect(missingInput.stderr).toContain('Missing required Action input: before');
@@ -65,7 +72,7 @@ describe('distribution contracts', () => {
     expect(ci.jobs.quality.steps.find((step) => step.run === 'npm run test:package')?.if).toBeUndefined();
     expect(ci.jobs.quality.steps.find((step) => step.uses?.startsWith('actions/upload-artifact@'))?.if).toBe('matrix.node == 24');
 
-    for (const file of ['Dockerfile', path.join('action', 'Dockerfile')]) {
+    for (const file of ['Dockerfile', 'Dockerfile.cli']) {
       const dockerfile = await projectFile(file);
       expect(dockerfile.match(/^FROM .+@sha256:[a-f0-9]{64}/gm)?.length).toBe(2);
       expect(dockerfile).toContain('sharing=locked');
@@ -79,7 +86,7 @@ describe('distribution contracts', () => {
       expect(dockerfile).toContain('rm -rf /usr/local/lib/node_modules/npm');
       expect(dockerfile).toContain('rm -f /usr/local/bin/npm');
     }
-    expect(await projectFile('Dockerfile')).toContain('find /app/fixtures -type f -exec chmod 0644');
+    expect(await projectFile('Dockerfile.cli')).toContain('find /app/fixtures -type f -exec chmod 0644');
   });
 
   it('uses the canonical repository in package, report, schema, and contributor metadata', async () => {
@@ -107,8 +114,9 @@ describe('distribution contracts', () => {
     }
     expect(await projectFile('examples/github-action.yml')).toContain('uses: Dtdkvn/depdiff@');
     const progress = await projectFile('PROGRESS.md');
-    expect(progress).toContain('no remote configured');
-    expect(progress).toContain('not been pushed or published to npm');
+    expect(progress).toContain('no configured remote');
+    expect(progress).toContain('public source repository');
+    expect(progress).toContain('npm package, `v0.1.0` tag, and first reviewed Action release are not published yet');
   });
 
   it('pins dependencies and enforces the fail-closed release contract', async () => {

@@ -38,7 +38,7 @@ outputs:
     description: Depdiff exit code (0 pass, 1 policy violation, 2 input error, 3 internal error).
 runs:
   using: docker
-  image: action/Dockerfile
+  image: Dockerfile
   args:
     - ${{ inputs.before }}
     - ${{ inputs.after }}

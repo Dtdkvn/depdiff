@@ -1,6 +1,6 @@
 # GitHub launch kit
 
-This file contains copy and checks for the first public launch of [Depdiff](../README.md). Keep availability claims synchronized with the repository and npm registry: the source tree is ready, but `depdiff-audit` and the hosted Docker Action are not public distributions until their respective publication steps complete.
+This file contains copy and checks for the public launch of [Depdiff](../README.md). The source repository is live at <https://github.com/Dtdkvn/depdiff>; `depdiff-audit`, the `v0.1.0` tag, and the first reviewed Action release remain unavailable until their publication steps complete.
 
 ## Repository profile
 
@@ -32,7 +32,7 @@ The safety model matters as much as the detectors. Depdiff treats target package
 
 Reports are meant to travel through a real review workflow. A single run can produce a terminal summary, standalone HTML, JSON, Markdown, and SARIF 2.1.0. The HTML report has no external JavaScript or CSS dependency. The GitHub Action adds annotations and report artifacts; the CLI exposes explicit exit codes; and YAML or JSON policy controls severity, score, domains, install scripts, capabilities, dependency count, file count, and accepted fingerprints.
 
-Before repository publication, the honest installation path is an existing source checkout: run `npm ci --ignore-scripts`, then `npm run demo`. Once `https://github.com/Dtdkvn/depdiff` is public, new users can clone that same source. The demo is deterministic, offline, and produces HTML, JSON, Markdown, and SARIF from checked-in safe/risky fixtures. A Docker Compose demo is also included. The `npx depdiff-audit` and hosted `Dtdkvn/depdiff` Action examples are ready for use only after their publication checklist items are complete.
+The source-first installation path is available now: clone `https://github.com/Dtdkvn/depdiff`, run `npm ci --ignore-scripts`, then run `npm run demo`. The demo is deterministic, offline, and produces HTML, JSON, Markdown, and SARIF from checked-in safe/risky fixtures. A Docker Compose demo is also included. The `npx depdiff-audit` and hosted `Dtdkvn/depdiff` Action examples are ready for use only after their publication checklist items are complete.
 
 Detector changes have a labeled regression gate, but I want to be precise about what it proves. The full opt-in corpus contains exactly 10 cases: six labeled clean cases and four labeled alert cases. Five clean cases are integrity-pinned ordinary npm release pairs; one is a no-op fixture. Three alert cases are synthetic evasive transformations. Exactly one case uses a human-vetted real compromised release, paired with its clean predecessor. The corpus is deliberately small and selection-biased. Its precision, recall, false-positive rate, and risk scores catch regressions in this project; they are not market-wide accuracy estimates, malware verdicts, or proof that a package is safe.
 
@@ -46,7 +46,7 @@ Depdiff is an open-source, local-first way to review the security-relevant delta
 
 Target packages are treated as hostile data: Depdiff never installs them, imports their modules, or runs lifecycle scripts. It supports offline directory/tarball comparisons, standalone HTML, JSON, Markdown, SARIF, baselines, policy-as-code, and CI exit codes.
 
-The project is source-first: from an existing checkout, run `npm ci --ignore-scripts`, then `npm run demo`; clone `Dtdkvn/depdiff` once the repository is public. The npm package and hosted GitHub Action are explicitly post-publish paths.
+The project is source-first today: clone `Dtdkvn/depdiff`, run `npm ci --ignore-scripts`, then `npm run demo`. The npm package, `v0.1.0` tag, and hosted GitHub Action remain explicitly post-release paths.
 
 Its full benchmark is intentionally modest: 10 labeled cases, including exactly one human-vetted real compromise. Scores prioritize review; they are not malware verdicts. Feedback on missed deltas and noisy findings is welcome.
 
@@ -58,9 +58,9 @@ Its full benchmark is intentionally modest: 10 labeled cases, including exactly 
 
 ### Repository publication
 
-- [ ] Create or confirm the public repository at `https://github.com/Dtdkvn/depdiff` with `main` as the default branch.
+- [x] Publish the reviewed source at `https://github.com/Dtdkvn/depdiff` with `main` as the default branch.
 - [ ] Add the 151-character About text and the topics listed above.
-- [ ] Configure the local `origin` only when ready, push the reviewed history, and confirm no private branches, artifacts, tokens, or machine-specific files are included.
+- [x] Push only the reviewed history and confirm no private branches, artifacts, tokens, or machine-specific files are included.
 - [ ] Confirm the CI badge resolves and Node 22/24 quality, container, and local Action jobs pass on GitHub-hosted runners.
 - [ ] Enable Issues and private vulnerability reporting; verify the [`SECURITY.md`](../SECURITY.md) advisory link resolves.
 - [ ] Render the README on GitHub and check the demo GIF, report screenshot, Mermaid diagram, headings, and relative links.

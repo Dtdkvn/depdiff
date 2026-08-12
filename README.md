@@ -16,19 +16,18 @@ Depdiff downloads—or accepts locally—the old and new npm package tarballs, p
 - **Keep package code on your machine.** Analysis and reports are local; `--offline` makes network access impossible and accepts directories/tarballs only.
 - **Gate updates without a black box.** Stable fingerprints, baselines, policy-as-code, CI exit codes, SARIF, JSON, Markdown, and a standalone HTML report are built in.
 
-> **Availability:** source is the current distribution. `depdiff-audit` has not been published to npm, and the GitHub Action is not consumable until this repository is public. Commands that require the public repository or npm are labeled below.
+> **Availability:** the public GitHub source is the current distribution. `depdiff-audit`, the `v0.1.0` tag, and the first reviewed Action release have not been published yet. Source commands work now; npm and hosted Action paths remain labeled as post-release below.
 
 ## Quickstart
 
-### Run from an existing source checkout
+### Run from source
 
 ```bash
+git clone https://github.com/Dtdkvn/depdiff.git
 cd depdiff
 npm ci --ignore-scripts
 npm run demo
 ```
-
-After this repository is public, obtain the same checkout with `git clone https://github.com/Dtdkvn/depdiff.git`.
 
 The demo is deterministic and offline. It compares checked-in safe/risky fixtures and writes HTML, JSON, Markdown, and SARIF reports under `.depdiff-demo/`. The risky fixture deliberately adds an install script, `child_process`, a network destination, encoded code, a maintainer change, and a native-looking binary; Depdiff inspects those files as data and never executes the fixture.
 
@@ -137,14 +136,14 @@ includeBaseline: false
 | `2` | Invalid input, policy, archive, or configuration |
 | `3` | Unexpected internal failure |
 
-## GitHub Actions, after repository publication
+## GitHub Actions, after the first reviewed release
 
-The Docker Action is implemented and tested locally, but it cannot be consumed until `Dtdkvn/depdiff` is published on GitHub. The example pins the reviewed release-hardening commit already present in this repository's history:
+The Docker Action implementation is public and tested, but the first reviewed Action release has not been published yet. After that release is available, pin its reviewed full commit SHA:
 
 ```yaml
 - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 - name: Audit the candidate update
-  uses: Dtdkvn/depdiff@4a37a516d9f8d4d147457ec561d126618ffc6906 # available after repository publication
+  uses: Dtdkvn/depdiff@4a37a516d9f8d4d147457ec561d126618ffc6906 # available after the first reviewed Action release
   with:
     before: package-name@1.4.0
     after: package-name@1.5.0
