@@ -7,6 +7,11 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) conventi
 ### Fixed
 
 - ran the audit when the CLI is invoked through the installed `node_modules/.bin/depdiff` symlink, which previously exited 0 without analyzing anything, and made the packaged smoke test exercise that entry point;
+- failed closed when shipped code cannot be analyzed, instead of scoring it as clean: files are now classified by manifest entry point, shebang, and content rather than by extension alone, oversized and control-byte-heavy files keep a classifiable prefix, and a parse failure reports the lost coverage without discarding lexical capabilities;
+- resolved module loads reached through `require` aliases, member-expression loaders such as `process.mainModule.require` and `module.constructor._load`, computed loader properties, aliased code constructors, and statically foldable module names, so the real capability and severity are reported;
+- stopped capability names inside comments and string literals in the previous version from suppressing the same capability in the new one;
+- recorded internationalized URL hosts so homoglyph destinations raise a domain finding and `denyDomains` can match them;
+- replaced every locale-sensitive comparison with a byte-ordered one, so sort order, fingerprints, and report bytes no longer depend on the host locale;
 - made the Docker Action conform to GitHub's Dockerfile/input contract and preserve policy thresholds;
 - prevented archive-root/default-ignore, oversized-manifest, changed-binary, and baseline-fingerprint false negatives;
 - validated redirects before requests, streamed registry metadata through its cap, and hardened strongest-digest verification;

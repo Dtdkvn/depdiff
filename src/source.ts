@@ -19,6 +19,7 @@ import { pipeline } from 'node:stream/promises';
 import { Readable, Transform } from 'node:stream';
 import * as tar from 'tar';
 import { minimatch } from 'minimatch';
+import { manifestEntryPaths } from './codeprofile.js';
 import type {
   FileSummary,
   LoadedFile,
@@ -27,7 +28,10 @@ import type {
   ResolveOptions,
   SourceDescriptor,
 } from './types.js';
-import { asStringRecord, isRecord, sha256, stringArray, UserError } from './util.js';
+import { asStringRecord, compareStrings, isRecord, sha256, stringArray, UserError } from './util.js';
+
+/** Bytes retained from every file so oversized content can still be classified. */
+const PROBE_BYTES = 4_096;
 
 interface RegistryDocument {
   'dist-tags'?: Record<string, string>;
@@ -478,7 +482,7 @@ async function scanDirectory(
 
   async function visit(current: string): Promise<void> {
     const entries = await readdir(current, { withFileTypes: true });
-    entries.sort((a, b) => a.name.localeCompare(b.name));
+    entries.sort((a, b) => compareStrings(a.name, b.name));
     for (const entry of entries) {
       entriesVisited += 1;
       if (entriesVisited > options.limits.maxFiles) throw new UserError(`Input contains more than ${options.limits.maxFiles} entries.`);
@@ -518,13 +522,16 @@ async function scanDirectory(
         packageManifest = buffer;
       }
       const kind = isProbablyText(buffer) ? 'text' : 'binary';
+      const analyzable = buffer.length <= options.limits.maxTextBytes;
       files.set(relative, {
         path: relative,
         size: details.size,
         sha256: sha256(buffer),
         mode: details.mode,
         kind,
-        ...(buffer.length <= options.limits.maxTextBytes ? { content: buffer } : {}),
+        // Files past the analyzed-text limit still keep a copied prefix so the
+        // analyzer can classify them (shebang, JS shape) and fail closed.
+        ...(analyzable ? { content: buffer } : { probe: Buffer.from(buffer.subarray(0, PROBE_BYTES)) }),
       });
     }
   }
@@ -563,6 +570,7 @@ function parsePackageMetadata(buffer: Buffer | undefined, source: SourceDescript
   const bundled = document.bundledDependencies ?? document.bundleDependencies;
   const repository = normalizeRepository(document.repository);
   return {
+    entryPoints: manifestEntryPaths(document),
     name: typeof document.name === 'string' ? document.name : source.packageName ?? '(unknown package)',
     version: typeof document.version === 'string' ? document.version : source.version ?? '(unknown version)',
     ...(typeof document.description === 'string' ? { description: document.description } : {}),

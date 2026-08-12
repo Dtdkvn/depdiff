@@ -4,7 +4,7 @@ import { minimatch } from 'minimatch';
 import { parse as parseYaml } from 'yaml';
 import { summarizeRisk } from './analyzer.js';
 import type { Baseline, DiffReport, Finding, Policy, PolicyResult, PolicyViolation, Severity } from './types.js';
-import { isRecord, severityRank, stableStringify, stringArray, UserError, writeTextFile } from './util.js';
+import { compareStrings, isRecord, severityRank, stableStringify, stringArray, UserError, writeTextFile } from './util.js';
 
 export const DEFAULT_POLICY: Policy = {
   version: 1,
@@ -200,7 +200,7 @@ export async function writeBaseline(filePath: string, report: DiffReport): Promi
   const baseline: Baseline = {
     schemaVersion: 1,
     generatedAt: report.generatedAt,
-    findings: report.findings.map(({ fingerprint, id, title }) => ({ fingerprint, id, title })).sort((a, b) => a.fingerprint.localeCompare(b.fingerprint)),
+    findings: report.findings.map(({ fingerprint, id, title }) => ({ fingerprint, id, title })).sort((a, b) => compareStrings(a.fingerprint, b.fingerprint)),
   };
   await writeTextFile(filePath, `${stableStringify(baseline)}\n`);
 }

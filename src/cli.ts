@@ -33,6 +33,7 @@ interface CompareOptions {
   maxTotalBytes: number;
   maxFileBytes: number;
   maxArchiveBytes: number;
+  maxTextBytes: number;
   maxCompressionRatio: number;
   timeout: number;
   quiet: boolean;
@@ -118,6 +119,7 @@ function addCompareOptions(command: Command): Command {
     .option('--max-total-bytes <bytes>', 'maximum unpacked bytes', integerOption, DEFAULT_LIMITS.maxTotalBytes)
     .option('--max-file-bytes <bytes>', 'maximum bytes in one file', integerOption, DEFAULT_LIMITS.maxFileBytes)
     .option('--max-archive-bytes <bytes>', 'maximum compressed tarball bytes', integerOption, DEFAULT_LIMITS.maxArchiveBytes)
+    .option('--max-text-bytes <bytes>', 'maximum bytes of a file kept for source analysis', integerOption, DEFAULT_LIMITS.maxTextBytes)
     .option('--max-compression-ratio <ratio>', 'maximum expanded/compressed ratio', integerOption, DEFAULT_LIMITS.maxCompressionRatio)
     .option('--timeout <ms>', 'network timeout in milliseconds', integerOption, DEFAULT_LIMITS.timeoutMs)
     .option('-q, --quiet', 'suppress human summary and file notices', false);
@@ -140,6 +142,7 @@ async function compare(before: string, after: string, options: CompareOptions): 
       maxTotalBytes: options.maxTotalBytes,
       maxFileBytes: options.maxFileBytes,
       maxArchiveBytes: options.maxArchiveBytes,
+      maxTextBytes: options.maxTextBytes,
       maxCompressionRatio: options.maxCompressionRatio,
       timeoutMs: options.timeout,
     },

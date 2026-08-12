@@ -16,6 +16,16 @@ export function sha256(value: string | Buffer): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+/**
+ * Locale-independent string ordering. `String.prototype.localeCompare` folds the
+ * host's collation into the result, which would leak the environment's locale
+ * into sort order, fingerprints, and report bytes. Every ordering that identity
+ * or output depends on must use this comparator instead.
+ */
+export function compareStrings(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export function stableStringify(value: unknown): string {
   return JSON.stringify(sortValue(value), null, 2);
 }
@@ -25,7 +35,7 @@ function sortValue(value: unknown): unknown {
   if (value && typeof value === 'object' && !Buffer.isBuffer(value)) {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
-        .sort(([a], [b]) => a.localeCompare(b))
+        .sort(([a], [b]) => compareStrings(a, b))
         .map(([key, child]) => [key, sortValue(child)]),
     );
   }

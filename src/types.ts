@@ -68,6 +68,12 @@ export interface PackageMetadata {
   devDependencies: Record<string, string>;
   bundledDependencies: string[];
   maintainers: string[];
+  /**
+   * Relative paths the manifest points npm and Node at (`main`, `module`,
+   * `browser`, `bin`, `exports`, `imports`, `types`). These are loaded as code
+   * whatever their file extension, so the analyzer treats them as code.
+   */
+  entryPoints: string[];
   files?: string[];
 }
 
@@ -87,7 +93,10 @@ export interface PackageSnapshot {
 }
 
 export interface LoadedFile extends FileSummary {
+  /** Full bytes, retained only up to `maxTextBytes`. */
   content?: Buffer;
+  /** Leading bytes, retained when `content` was dropped for exceeding the limit. */
+  probe?: Buffer;
 }
 
 export interface LoadedPackage {

@@ -1,5 +1,22 @@
-import path from 'node:path';
-import { parse } from '@babel/parser';
+import {
+  BINARY_EXTENSIONS,
+  CODE_EXTENSIONS,
+  codeExtension,
+  classifyCodeFile,
+  collectAliases,
+  DYNAMIC_CODE_PROPERTIES,
+  foldStaticString,
+  inertRegionsFromAst,
+  LineIndex,
+  memberPropertyName,
+  MODULE_LOAD_PROPERTIES,
+  parseSource,
+  resolveEntryReasons,
+  scanInertRegions,
+  scriptEntryTokens,
+  walkAst,
+} from './codeprofile.js';
+import type { AliasTables, CodeReason, InertRegions } from './codeprofile.js';
 import { LIFECYCLE_SCRIPTS } from './constants.js';
 import type {
   CapabilitySignal,
@@ -15,9 +32,10 @@ import type {
   MetadataDiff,
   ResolveOptions,
   RiskSummary,
+  ScanLimits,
   Severity,
 } from './types.js';
-import { isRecord, sha256, truncate } from './util.js';
+import { compareStrings, isRecord, sha256, truncate } from './util.js';
 
 interface AnalyzeOptions {
   generatedAt: string;
@@ -29,10 +47,21 @@ interface FindingDraft extends Omit<Finding, 'fingerprint' | 'status'> {
   identity: string;
 }
 
+/**
+ * A shipped file that plausibly contains code but was not fully analyzed. Every
+ * gap becomes a visible finding: "not understood" must never look like "safe".
+ */
+interface CoverageGap {
+  file: string;
+  reason: 'size-limit' | 'unreadable' | 'parse-failure' | 'partial-parse';
+  detail: string;
+}
+
 interface StaticProfile {
   signals: CapabilitySignal[];
   domains: Map<string, Evidence[]>;
-  parseFailures: Evidence[];
+  gaps: CoverageGap[];
+  controlBytes: Evidence[];
 }
 
 const MODULE_CAPABILITIES: Record<string, { capability: string; category: Category; message: string }> = {
@@ -105,15 +134,15 @@ const CAPABILITY_RISK: Record<string, { severity: Severity; score: number; title
   },
 };
 
-const CODE_EXTENSIONS = new Set(['.js', '.cjs', '.mjs', '.jsx', '.ts', '.cts', '.mts', '.tsx']);
-const BINARY_EXTENSIONS = new Set(['.exe', '.dll', '.so', '.dylib', '.node', '.wasm', '.bin', '.dat', '.jar']);
 const GENERATED_EXTENSIONS = new Set(['.map', '.min.js', '.bundle.js']);
+const NATIVE_BINARY_EXTENSIONS = new Set(['.node', '.dll', '.so', '.dylib', '.exe']);
 
 export function analyzeDiff(before: LoadedPackage, after: LoadedPackage, options: AnalyzeOptions): DiffReport {
   const inventory = diffInventory(before, after);
   const metadata = diffMetadata(before, after);
-  const beforeProfile = profilePackage(before);
-  const afterProfile = profilePackage(after);
+  const limits = options.resolveOptions.limits;
+  const beforeProfile = profilePackage(before, limits);
+  const afterProfile = profilePackage(after, limits);
   const drafts: FindingDraft[] = [];
 
   drafts.push(...capabilityFindings(beforeProfile, afterProfile, after));
@@ -124,20 +153,7 @@ export function analyzeDiff(before: LoadedPackage, after: LoadedPackage, options
   drafts.push(...obfuscationFindings(before, after, inventory));
   drafts.push(...metadataFindings(before, after, metadata));
   drafts.push(...provenanceFindings(before, after));
-  if (afterProfile.parseFailures.length > beforeProfile.parseFailures.length) {
-    drafts.push({
-      id: 'analysis.new-parse-failures',
-      identity: `analysis.new-parse-failures:${evidenceFileIdentity(afterProfile.parseFailures, after)}`,
-      title: 'New source files could not be parsed',
-      description: 'Static AST analysis fell back to lexical checks for some new or changed code.',
-      category: 'obfuscation',
-      severity: 'low',
-      score: 3,
-      evidence: afterProfile.parseFailures.slice(0, 8),
-      remediation: 'Inspect these files manually and confirm they are expected generated syntax rather than parser evasion.',
-      tags: ['parser', 'review-gap'],
-    });
-  }
+  drafts.push(...coverageFindings(afterProfile, after, inventory, limits));
 
   const findings = deduplicateFindings(drafts, after.snapshot.package.name).sort(compareFinding);
   const risk = summarizeRisk(findings);
@@ -179,9 +195,9 @@ function diffInventory(before: LoadedPackage, after: LoadedPackage): InventoryDi
   for (const [filePath, previous] of before.files) {
     if (!after.files.has(filePath)) removed.push(stripContent(previous));
   }
-  added.sort((a, b) => a.path.localeCompare(b.path));
-  removed.sort((a, b) => a.path.localeCompare(b.path));
-  modified.sort((a, b) => a.after.path.localeCompare(b.after.path));
+  added.sort((a, b) => compareStrings(a.path, b.path));
+  removed.sort((a, b) => compareStrings(a.path, b.path));
+  modified.sort((a, b) => compareStrings(a.after.path, b.after.path));
   return { added, removed, modified, unchanged };
 }
 
@@ -207,7 +223,7 @@ function diffMetadata(before: LoadedPackage, after: LoadedPackage): MetadataDiff
     ...diffDependencySet(previous.optionalDependencies, next.optionalDependencies, 'optional'),
     ...diffDependencySet(previous.peerDependencies, next.peerDependencies, 'peer'),
     ...diffDependencySet(previous.devDependencies, next.devDependencies, 'development'),
-  ].sort((a, b) => `${a.scope}:${a.name}`.localeCompare(`${b.scope}:${b.name}`));
+  ].sort((a, b) => compareStrings(`${a.scope}:${a.name}`, `${b.scope}:${b.name}`));
   const packageFields: MetadataDiff['packageFields'] = [];
   for (const [field, a, b] of [
     ['name', previous.name, next.name],
@@ -243,40 +259,114 @@ function effectiveMaintainers(pkg: LoadedPackage): string[] {
   return [...new Set(pkg.snapshot.source.maintainers ?? pkg.snapshot.package.maintainers)].sort();
 }
 
-function profilePackage(pkg: LoadedPackage): StaticProfile {
+/**
+ * Profiles every shipped file that plausibly contains code.
+ *
+ * Coverage is fail-closed: a file is selected by content and manifest metadata
+ * rather than an extension allowlist, its bytes are analyzed whatever the
+ * text/binary classification said, and any file that could not be analyzed for
+ * any reason is recorded as a coverage gap instead of silently contributing
+ * nothing.
+ */
+function profilePackage(pkg: LoadedPackage, limits: ScanLimits): StaticProfile {
   const signals: CapabilitySignal[] = [];
   const domains = new Map<string, Evidence[]>();
-  const parseFailures: Evidence[] = [];
+  const gaps: CoverageGap[] = [];
+  const controlBytes: Evidence[] = [];
+  const entryReasons = resolveEntryReasons(
+    pkg.snapshot.package.entryPoints,
+    scriptEntryTokens(pkg.snapshot.package.scripts),
+    new Set(pkg.files.keys()),
+  );
   for (const file of pkg.files.values()) {
-    if (file.kind !== 'text' || !file.content || !CODE_EXTENSIONS.has(path.extname(file.path).toLowerCase())) continue;
-    const source = file.content.toString('utf8');
-    profileUrls(source, file.path, domains);
-    profileLexicalCapabilities(source, file.path, signals);
-    try {
-      const ast = parse(source, {
-        sourceType: 'unambiguous',
-        errorRecovery: false,
-        plugins: ['typescript', 'jsx', 'decorators-legacy', 'importAttributes', 'topLevelAwait'],
-      });
-      walkAst(ast, (node) => profileNode(node, source, file.path, signals));
-    } catch (error) {
-      parseFailures.push({ file: file.path, message: truncate(error instanceof Error ? error.message : String(error)) });
-    }
+    const verdict = classifyCodeFile({
+      filePath: file.path,
+      kind: file.kind,
+      probe: file.content ?? file.probe,
+      entryReason: entryReasons.get(file.path),
+    });
+    if (!verdict.code) continue;
+    profileCodeFile(file, verdict.reason ?? 'content', { signals, domains, gaps, controlBytes }, limits);
   }
-  return { signals: uniqueSignals(signals), domains, parseFailures };
+  return { signals: uniqueSignals(signals), domains, gaps, controlBytes };
 }
 
-function profileUrls(source: string, file: string, domains: Map<string, Evidence[]>): void {
-  const pattern = /\bhttps?:\\?\/\\?\/([a-z0-9.-]+|\[[a-f0-9:]+\])(?::\d+)?(?:[/?#]|\b)/gi;
+function profileCodeFile(
+  file: LoadedFile,
+  reason: CodeReason,
+  out: { signals: CapabilitySignal[]; domains: Map<string, Evidence[]>; gaps: CoverageGap[]; controlBytes: Evidence[] },
+  limits: ScanLimits,
+): void {
+  if (!file.content) {
+    out.gaps.push({
+      file: file.path,
+      reason: 'size-limit',
+      detail: `${file.size.toLocaleString('en-US')} bytes exceeds the ${limits.maxTextBytes.toLocaleString('en-US')}-byte analyzed-text limit (--max-text-bytes); selected as code by ${reason}`,
+    });
+    return;
+  }
+  const source = file.content.toString('utf8');
+  const lines = new LineIndex(source);
+  const parsed = parseSource(source, codeExtension(file.path));
+  const inert = parsed.ast === undefined ? scanInertRegions(source) : inertRegionsFromAst(parsed.ast);
+  profileUrls(source, file.path, lines, inert, out.domains);
+  profileLexicalCapabilities(source, file.path, lines, inert, out.signals, parsed.ast === undefined || parsed.degraded);
+  if (parsed.ast !== undefined) {
+    const aliases = collectAliases(parsed.ast);
+    walkAst(parsed.ast, (node) => profileNode(node, lines, file.path, aliases, out.signals));
+  }
+  if (parsed.error !== undefined) {
+    out.gaps.push({
+      file: file.path,
+      reason: parsed.ast === undefined ? 'parse-failure' : 'partial-parse',
+      detail: truncate(parsed.error, 200),
+    });
+  }
+  const control = countControlBytes(file.content);
+  if (control.count >= CONTROL_BYTE_THRESHOLD || control.nul) {
+    out.controlBytes.push({
+      file: file.path,
+      message: `${control.count.toLocaleString('en-US')} raw control byte(s)${control.nul ? ' including NUL' : ''} inside a file shipped as code (selected by ${reason}).`,
+    });
+  }
+}
+
+const CONTROL_BYTE_THRESHOLD = 16;
+
+function countControlBytes(buffer: Buffer): { count: number; nul: boolean } {
+  let count = 0;
+  let nul = false;
+  for (const byte of buffer) {
+    if (byte === 0) nul = true;
+    if (byte < 7 || (byte > 14 && byte < 32)) count += 1;
+  }
+  return { count, nul };
+}
+
+function profileUrls(
+  source: string,
+  file: string,
+  lines: LineIndex,
+  inert: InertRegions,
+  domains: Map<string, Evidence[]>,
+): void {
+  // Hosts may be internationalized, so the character class must accept any
+  // Unicode letter or digit. An ASCII-only class silently ignored homoglyph
+  // destinations such as "еvil-corp.com", which also meant no domain tag was
+  // produced and a denyDomains policy could not match them.
+  const pattern = /\bhttps?:\\?\/\\?\/((?:[\p{L}\p{N}][\p{L}\p{N}.-]*)|\[[a-f0-9:]+\])(?::\d+)?(?:[/?#]|\b)/giu;
   for (const match of source.matchAll(pattern)) {
     const host = match[1]?.toLowerCase();
     if (!host) continue;
     const index = match.index ?? 0;
+    // A URL inside a string literal is a real destination; one inside a comment
+    // is prose and must neither raise nor pre-suppress a finding.
+    if (inert.comments.contains(index)) continue;
     const evidence = {
       file,
-      line: lineNumberAt(source, index),
+      line: lines.lineNumber(index),
       message: `References ${host}.`,
-      snippet: truncate(lineAt(source, index)),
+      snippet: truncate(lines.lineText(index)),
     };
     const current = domains.get(host) ?? [];
     if (current.length < 5) current.push(evidence);
@@ -284,7 +374,19 @@ function profileUrls(source: string, file: string, domains: Map<string, Evidence
   }
 }
 
-function profileLexicalCapabilities(source: string, file: string, signals: CapabilitySignal[]): void {
+/**
+ * Lexical capability checks. Matches inside comments and string literals are
+ * discarded: `// never use eval()` is not a call, and a v1 that merely mentions
+ * a capability must not suppress the v2 that actually gains it.
+ */
+function profileLexicalCapabilities(
+  source: string,
+  file: string,
+  lines: LineIndex,
+  inert: InertRegions,
+  signals: CapabilitySignal[],
+  includeModuleFallback: boolean,
+): void {
   const checks: Array<[RegExp, string, Category, string]> = [
     [/\b(?:eval|Function)\s*\(/g, 'dynamic-code', 'execution', 'Calls a dynamic code constructor.'],
     [/\bprocess\s*\.\s*env\b/g, 'environment', 'execution', 'Reads environment variables.'],
@@ -296,54 +398,110 @@ function profileLexicalCapabilities(source: string, file: string, signals: Capab
   for (const [pattern, capability, category, message] of checks) {
     for (const match of source.matchAll(pattern)) {
       const index = match.index ?? 0;
-      signals.push({ capability, category, file, line: lineNumberAt(source, index), message, snippet: truncate(lineAt(source, index)) });
+      if (inert.comments.contains(index) || inert.literals.contains(index)) continue;
+      signals.push({ capability, category, file, line: lines.lineNumber(index), message, snippet: truncate(lines.lineText(index)) });
+    }
+  }
+  if (!includeModuleFallback) return;
+  // The AST is missing or incomplete. Recover module capabilities lexically so a
+  // parse failure degrades coverage instead of erasing the capability set.
+  const moduleReferences = [
+    /\b(?:require|_load|_compile)\s*\(\s*['"]([^'"\n]{1,120})['"]/g,
+    /\bimport\s*\(\s*['"]([^'"\n]{1,120})['"]/g,
+    /\bfrom\s*['"]([^'"\n]{1,120})['"]/g,
+  ];
+  for (const pattern of moduleReferences) {
+    for (const match of source.matchAll(pattern)) {
+      const index = match.index ?? 0;
+      if (inert.comments.contains(index) || inert.literals.contains(index)) continue;
+      const mapping = moduleCapability(match[1] ?? '');
+      if (!mapping) continue;
+      signals.push({
+        capability: mapping.capability,
+        category: mapping.category,
+        file,
+        line: lines.lineNumber(index),
+        message: `${mapping.message} (recovered lexically after a parse failure)`,
+        snippet: truncate(lines.lineText(index)),
+      });
     }
   }
 }
 
 function profileNode(
   node: Record<string, unknown>,
-  source: string,
+  lines: LineIndex,
   file: string,
+  aliases: AliasTables,
   signals: CapabilitySignal[],
 ): void {
   const nodeType = typeof node.type === 'string' ? node.type : '';
   if (nodeType === 'ImportDeclaration' || nodeType === 'ExportNamedDeclaration' || nodeType === 'ExportAllDeclaration') {
-    const moduleName = literalString(node.source);
-    if (moduleName) addModuleSignal(moduleName, node, source, file, signals);
+    const moduleName = foldStaticString(node.source);
+    if (moduleName) addModuleSignal(moduleName.value, moduleName.literal, node, lines, file, signals);
+  }
+  if (nodeType === 'ImportExpression') {
+    resolveModuleArgument(node.source, node, lines, file, signals);
   }
   if (nodeType === 'CallExpression') {
     const callee = isRecord(node.callee) ? node.callee : undefined;
-    if (callee?.type === 'Identifier' && callee.name === 'require') {
-      const argument = firstArrayItem(node.arguments);
-      const moduleName = literalString(argument);
-      if (moduleName) addModuleSignal(moduleName, node, source, file, signals);
-      else addSignal('module-loader', 'execution', 'Loads a module from a dynamic path.', node, source, file, signals);
-    }
+    const argument = firstArrayItem(node.arguments);
     if (callee?.type === 'Import') {
-      const argument = firstArrayItem(node.arguments);
-      const moduleName = literalString(argument);
-      if (moduleName) addModuleSignal(moduleName, node, source, file, signals);
-      else addSignal('module-loader', 'execution', 'Loads a module from a dynamic path.', node, source, file, signals);
+      resolveModuleArgument(argument, node, lines, file, signals);
+      return;
+    }
+    if (callee?.type === 'Identifier' && typeof callee.name === 'string' && (callee.name === 'require' || aliases.requireLike.has(callee.name))) {
+      resolveModuleArgument(argument, node, lines, file, signals);
+      return;
+    }
+    if (!callee) return;
+    if (callee.type === 'Identifier' && typeof callee.name === 'string' && aliases.dynamicLike.has(callee.name)) {
+      // const F = (() => {}).constructor; F("return require('child_process')")
+      // reaches the Function constructor without ever naming Function or eval.
+      addSignal('dynamic-code', 'execution', 'Builds executable code through an aliased code constructor.', node, lines, file, signals);
+      return;
+    }
+    const property = memberPropertyName(callee);
+    if (property && MODULE_LOAD_PROPERTIES.has(property)) {
+      // process.mainModule.require(x), module.constructor._load(x), and the
+      // computed forms of both reach the module loader just as a bare require
+      // does, so the loaded module decides the capability.
+      resolveModuleArgument(argument, node, lines, file, signals);
+      return;
+    }
+    if (property && DYNAMIC_CODE_PROPERTIES.has(property) && foldStaticString(argument)) {
+      addSignal('dynamic-code', 'execution', 'Builds executable code from a string through a member reference.', node, lines, file, signals);
     }
   }
-  if (nodeType === 'ImportExpression') {
-    const moduleName = literalString(node.source);
-    if (moduleName) addModuleSignal(moduleName, node, source, file, signals);
-    else addSignal('module-loader', 'execution', 'Loads a module from a dynamic path.', node, source, file, signals);
-  }
+}
+
+function resolveModuleArgument(
+  argument: unknown,
+  node: Record<string, unknown>,
+  lines: LineIndex,
+  file: string,
+  signals: CapabilitySignal[],
+): void {
+  const folded = foldStaticString(argument);
+  if (folded) addModuleSignal(folded.value, folded.literal, node, lines, file, signals);
+  else addSignal('module-loader', 'execution', 'Loads a module from a dynamic path.', node, lines, file, signals);
+}
+
+function moduleCapability(rawModule: string): { capability: string; category: Category; message: string } | undefined {
+  return MODULE_CAPABILITIES[rawModule.replace(/^node:/, '')];
 }
 
 function addModuleSignal(
   rawModule: string,
+  literal: boolean,
   node: Record<string, unknown>,
-  source: string,
+  lines: LineIndex,
   file: string,
   signals: CapabilitySignal[],
 ): void {
-  const moduleName = rawModule.replace(/^node:/, '');
-  const mapping = MODULE_CAPABILITIES[moduleName];
-  if (mapping) addSignal(mapping.capability, mapping.category, mapping.message, node, source, file, signals);
+  const mapping = moduleCapability(rawModule);
+  if (mapping) addSignal(mapping.capability, mapping.category, mapping.message, node, lines, file, signals);
+  else if (!literal) addSignal('module-loader', 'execution', 'Loads a module from a dynamic path.', node, lines, file, signals);
 }
 
 function addSignal(
@@ -351,16 +509,12 @@ function addSignal(
   category: Category,
   message: string,
   node: Record<string, unknown>,
-  source: string,
+  lines: LineIndex,
   file: string,
   signals: CapabilitySignal[],
 ): void {
   const start = typeof node.start === 'number' ? node.start : 0;
-  signals.push({ capability, category, file, line: lineNumberAt(source, start), message, snippet: truncate(lineAt(source, start)) });
-}
-
-function literalString(value: unknown): string | undefined {
-  return isRecord(value) && typeof value.value === 'string' ? value.value : undefined;
+  signals.push({ capability, category, file, line: lines.lineNumber(start), message, snippet: truncate(lines.lineText(start)) });
 }
 
 function firstArrayItem(value: unknown): unknown {
@@ -368,17 +522,70 @@ function firstArrayItem(value: unknown): unknown {
   return (value as unknown[])[0];
 }
 
-function walkAst(value: unknown, visitor: (node: Record<string, unknown>) => void): void {
-  if (Array.isArray(value)) {
-    for (const child of value) walkAst(child, visitor);
-    return;
+/**
+ * Turns unanalyzed content into visible findings. A reviewer must always be able
+ * to tell "Depdiff did not understand this content" from "this content is safe".
+ */
+function coverageFindings(
+  profile: StaticProfile,
+  candidate: LoadedPackage,
+  inventory: InventoryDiff,
+  limits: ScanLimits,
+): FindingDraft[] {
+  const changed = new Set([...inventory.added.map((file) => file.path), ...inventory.modified.map((change) => change.after.path)]);
+  const drafts: FindingDraft[] = [];
+  const relevant = profile.gaps.filter((gap) => changed.has(gap.file)).sort((a, b) => compareStrings(`${a.file}\0${a.reason}`, `${b.file}\0${b.reason}`));
+  const unanalyzed = relevant.filter((gap) => gap.reason === 'size-limit' || gap.reason === 'unreadable');
+  const parseGaps = relevant.filter((gap) => gap.reason === 'parse-failure' || gap.reason === 'partial-parse');
+  if (unanalyzed.length > 0) {
+    drafts.push({
+      id: 'analysis.unanalyzed-code',
+      identity: `unanalyzed:${gapIdentity(unanalyzed, candidate)}`,
+      title: `${unanalyzed.length} new or changed code file${unanalyzed.length === 1 ? '' : 's'} was not analyzed`,
+      description: `Depdiff ships these paths as code but never read their bytes, so no capability, destination, or obfuscation check ran on them. The analyzed-text limit is ${limits.maxTextBytes.toLocaleString('en-US')} bytes.`,
+      category: 'obfuscation',
+      severity: 'high',
+      score: 25,
+      evidence: unanalyzed.slice(0, 8).map((gap) => ({ file: gap.file, message: gap.detail })),
+      remediation: 'Raise --max-text-bytes above these files and re-run, or review them by hand. An unanalyzed shipped file can contain anything.',
+      tags: ['coverage', 'review-gap', 'unanalyzed'],
+    });
   }
-  if (!isRecord(value)) return;
-  if (typeof value.type === 'string') visitor(value);
-  for (const [key, child] of Object.entries(value)) {
-    if (key === 'loc' || key === 'tokens' || key === 'comments' || key === 'errors') continue;
-    if (Array.isArray(child) || isRecord(child)) walkAst(child, visitor);
+  if (parseGaps.length > 0) {
+    const partial = parseGaps.some((gap) => gap.reason === 'partial-parse');
+    drafts.push({
+      id: 'analysis.parse-failure',
+      identity: `parse-failure:${gapIdentity(parseGaps, candidate)}`,
+      title: `${parseGaps.length} new or changed code file${parseGaps.length === 1 ? '' : 's'} could not be parsed`,
+      description: `Syntax analysis ${partial ? 'recovered only part of' : 'failed on'} these files, so capability coverage fell back to lexical checks and is incomplete.`,
+      category: 'obfuscation',
+      severity: 'high',
+      score: 25,
+      evidence: parseGaps.slice(0, 8).map((gap) => ({ file: gap.file, message: gap.detail })),
+      remediation: 'Confirm the file is expected generated syntax rather than parser evasion, and review it by hand before approving the update.',
+      tags: ['coverage', 'review-gap', 'parser'],
+    });
   }
+  const control = profile.controlBytes.filter((evidence) => evidence.file !== undefined && changed.has(evidence.file));
+  if (control.length > 0) {
+    drafts.push({
+      id: 'obfuscation.control-bytes',
+      identity: `control-bytes:${evidenceFileIdentity(control, candidate)}`,
+      title: `${control.length} code file${control.length === 1 ? '' : 's'} contains raw control bytes`,
+      description: 'Files shipped and loaded as code contain raw control or NUL bytes, which normal source does not and which defeats text/binary heuristics.',
+      category: 'obfuscation',
+      severity: 'high',
+      score: 20,
+      evidence: control.slice(0, 8),
+      remediation: 'Inspect the raw bytes. Legitimate source has no reason to embed control characters outside string escapes.',
+      tags: ['obfuscation', 'control-bytes'],
+    });
+  }
+  return drafts;
+}
+
+function gapIdentity(gaps: CoverageGap[], pkg: LoadedPackage): string {
+  return [...new Set(gaps.map((gap) => `${gap.file}:${gap.reason}:${pkg.files.get(gap.file)?.sha256 ?? sha256(gap.detail)}`))].sort(compareStrings).join(',');
 }
 
 function capabilityFindings(before: StaticProfile, after: StaticProfile, candidate: LoadedPackage): FindingDraft[] {
@@ -477,9 +684,9 @@ function inventoryFindings(
   inventory: InventoryDiff,
 ): FindingDraft[] {
   const drafts: FindingDraft[] = [];
-  const binaries = inventory.added.filter((file) => file.kind === 'binary' || BINARY_EXTENSIONS.has(path.extname(file.path).toLowerCase()));
+  const binaries = inventory.added.filter((file) => file.kind === 'binary' || BINARY_EXTENSIONS.has(codeExtension(file.path)));
   if (binaries.length > 0) {
-    const native = binaries.some((file) => ['.node', '.dll', '.so', '.dylib', '.exe'].includes(path.extname(file.path).toLowerCase()));
+    const native = binaries.some((file) => NATIVE_BINARY_EXTENSIONS.has(codeExtension(file.path)));
     drafts.push({
       id: native ? 'binary.native.added' : 'binary.added',
       identity: `binaries:${binaries.map((file) => `${file.path}:${file.sha256}`).join(',')}`,
@@ -493,9 +700,9 @@ function inventoryFindings(
       tags: ['binary', ...(native ? ['native'] : [])],
     });
   }
-  const changedBinaries = inventory.modified.filter(({ after: file }) => file.kind === 'binary' || BINARY_EXTENSIONS.has(path.extname(file.path).toLowerCase()));
+  const changedBinaries = inventory.modified.filter(({ after: file }) => file.kind === 'binary' || BINARY_EXTENSIONS.has(codeExtension(file.path)));
   if (changedBinaries.length > 0) {
-    const native = changedBinaries.some(({ after: file }) => ['.node', '.dll', '.so', '.dylib', '.exe'].includes(path.extname(file.path).toLowerCase()));
+    const native = changedBinaries.some(({ after: file }) => NATIVE_BINARY_EXTENSIONS.has(codeExtension(file.path)));
     drafts.push({
       id: native ? 'binary.native.changed' : 'binary.changed',
       identity: `changed-binaries:${changedBinaries.map(({ before: previous, after: next }) => `${next.path}:${previous.sha256}:${next.sha256}`).join(',')}`,
@@ -596,7 +803,7 @@ function obfuscationFindings(before: LoadedPackage, after: LoadedPackage, invent
   for (const filePath of changedPaths) {
     const next = after.files.get(filePath);
     if (!next || next.kind !== 'text') continue;
-    const extension = path.extname(filePath).toLowerCase();
+    const extension = codeExtension(filePath);
     if (next.size > 1_000_000 || (next.size > 100_000 && [...GENERATED_EXTENSIONS].some((suffix) => filePath.endsWith(suffix)))) {
       generated.push({ file: filePath, message: `${next.size.toLocaleString('en-US')} byte generated/minified payload.` });
     }
@@ -754,7 +961,7 @@ function evidenceFileIdentity(evidence: Evidence[], pkg: LoadedPackage): string 
 
 function compareFinding(a: Finding, b: Finding): number {
   const ranks: Record<Severity, number> = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
-  return ranks[b.severity] - ranks[a.severity] || b.score - a.score || a.id.localeCompare(b.id);
+  return ranks[b.severity] - ranks[a.severity] || b.score - a.score || compareStrings(a.id, b.id);
 }
 
 export function summarizeRisk(findings: Finding[]): RiskSummary {
@@ -775,12 +982,17 @@ export function summarizeRisk(findings: Finding[]): RiskSummary {
 
 function uniqueSignals(signals: CapabilitySignal[]): CapabilitySignal[] {
   const seen = new Set<string>();
-  return signals.filter((signal) => {
+  const unique = signals.filter((signal) => {
     const key = `${signal.capability}:${signal.file}:${signal.line ?? 0}:${signal.message}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  // Sorted so evidence order never depends on traversal or filesystem order.
+  return unique.sort((a, b) => compareStrings(
+    `${a.file}\0${String(a.line ?? 0).padStart(9, '0')}\0${a.capability}\0${a.message}`,
+    `${b.file}\0${String(b.line ?? 0).padStart(9, '0')}\0${b.capability}\0${b.message}`,
+  ));
 }
 
 function lineNumberAt(source: string, index: number): number {
