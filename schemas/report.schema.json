@@ -14,7 +14,7 @@
     "generatedAt": { "type": "string", "format": "date-time" },
     "before": { "$ref": "#/$defs/snapshot" },
     "after": { "$ref": "#/$defs/snapshot" },
-    "inventory": { "type": "object" },
+    "inventory": { "$ref": "#/$defs/inventory" },
     "metadata": { "type": "object" },
     "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
     "risk": {
@@ -67,8 +67,43 @@
       "properties": {
         "source": { "type": "object" },
         "package": { "type": "object" },
-        "files": { "type": "array" },
+        "files": { "type": "array", "items": { "$ref": "#/$defs/fileSummary" } },
         "totalBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "fileSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "size", "sha256", "mode", "modeKnown", "kind"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "mode": { "type": "integer", "minimum": 0, "maximum": 511 },
+        "modeKnown": { "type": "boolean" },
+        "kind": { "enum": ["text", "binary", "symlink"] }
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["added", "removed", "modified", "unchanged"],
+      "properties": {
+        "added": { "type": "array", "items": { "$ref": "#/$defs/fileSummary" } },
+        "removed": { "type": "array", "items": { "$ref": "#/$defs/fileSummary" } },
+        "modified": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["before", "after"],
+            "properties": {
+              "before": { "$ref": "#/$defs/fileSummary" },
+              "after": { "$ref": "#/$defs/fileSummary" }
+            }
+          }
+        },
+        "unchanged": { "type": "integer", "minimum": 0 }
       }
     },
     "finding": {

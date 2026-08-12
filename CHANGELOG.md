@@ -6,6 +6,8 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) conventi
 
 ### Fixed
 
+- flags shipped dependencies that switch from registry versions to Git, URL, archive, workspace, or local paths, and flags later changes between those external sources;
+- validates every snapshot and inventory file shape in the public report schema, and preserves policy configuration warnings in SARIF execution notifications;
 - marks synthetic native-Windows and Windows-backed Docker Desktop 9p bind modes unknown while preserving authoritative tar-header modes and real executable transitions;
 - added a labeled detector benchmark with integrity-pinned benign releases, a human-vetted Datadog compromise sample, synthetic evasive cases, and enforced precision/recall/false-positive thresholds;
 - raised non-registry runtime dependencies to a dedicated high-severity finding and warned when `maxRiskScore` is configured without an explicit severity threshold;

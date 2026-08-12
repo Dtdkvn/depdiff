@@ -112,7 +112,17 @@ export function renderSarif(report: DiffReport, options: ReportRenderOptions = {
         semanticVersion: report.tool.version,
         rules,
       } },
-      invocations: [{ executionSuccessful: true, exitCode: report.policy.passed ? 0 : 1 }],
+      invocations: [{
+        executionSuccessful: true,
+        exitCode: report.policy.passed ? 0 : 1,
+        ...(report.policy.warnings.length > 0 ? {
+          toolExecutionNotifications: report.policy.warnings.map((warning) => ({
+            descriptor: { id: warning.rule },
+            level: 'warning',
+            message: { text: `${warning.rule}: ${warning.message}` },
+          })),
+        } : {}),
+      }],
       results,
     }],
   };

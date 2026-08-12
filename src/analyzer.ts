@@ -669,31 +669,50 @@ function installScriptFindings(metadata: MetadataDiff): FindingDraft[] {
 
 function dependencyFindings(metadata: MetadataDiff): FindingDraft[] {
   const runtimeAdded = metadata.dependencies.filter((change) => change.change === 'added' && change.scope !== 'development');
-  if (runtimeAdded.length === 0) return [];
-  const nonRegistry = runtimeAdded.filter((change) => isNonRegistryDependencySpecifier(change.after));
-  const registry = runtimeAdded.filter((change) => !nonRegistry.includes(change));
+  const nonRegistryAdded = runtimeAdded.filter((change) => isNonRegistryDependencySpecifier(change.after));
+  const registryAdded = runtimeAdded.filter((change) => !nonRegistryAdded.includes(change));
+  const changedNonRegistry = metadata.dependencies.filter((change) =>
+    change.change === 'changed'
+      && change.scope !== 'development'
+      && isNonRegistryDependencySpecifier(change.after),
+  );
   const drafts: FindingDraft[] = [];
-  if (nonRegistry.length > 0) drafts.push({
+  if (nonRegistryAdded.length > 0) drafts.push({
     id: 'dependencies.non-registry.added',
-    identity: `non-registry-dependencies:${nonRegistry.map((change) => `${change.scope}:${change.name}@${change.after}`).join(',')}`,
-    title: `${nonRegistry.length} non-registry dependenc${nonRegistry.length === 1 ? 'y' : 'ies'} added`,
-    description: 'Git, URL, and local dependency sources bypass npm registry integrity and provenance controls and may bring lifecycle code into installation.',
+    identity: `non-registry-dependencies:${nonRegistryAdded.map((change) => `${change.scope}:${change.name}@${change.after}`).join(',')}`,
+    title: `${nonRegistryAdded.length} non-registry dependenc${nonRegistryAdded.length === 1 ? 'y' : 'ies'} added`,
+    description: 'Git, URL, workspace, archive, and local dependency sources bypass npm registry integrity and provenance controls and may bring lifecycle code into installation.',
     category: 'dependency',
     severity: 'high',
-    score: Math.min(24, 17 + nonRegistry.length),
-    evidence: nonRegistry.slice(0, 20).map((change) => ({ file: 'package.json', message: `${change.scope}: ${change.name}@${change.after ?? '(unknown)'}` })),
+    score: Math.min(24, 17 + nonRegistryAdded.length),
+    evidence: nonRegistryAdded.slice(0, 20).map((change) => ({ file: 'package.json', message: `${change.scope}: ${change.name}@${change.after ?? '(unknown)'}` })),
     remediation: 'Pin a reviewed registry release with integrity metadata, or independently verify the immutable source commit and every lifecycle script.',
     tags: ['dependency', 'non-registry'],
   });
-  if (registry.length > 0) drafts.push({
+  if (changedNonRegistry.length > 0) drafts.push({
+    id: 'dependencies.non-registry.changed',
+    identity: `non-registry-dependency-changes:${changedNonRegistry.map((change) => `${change.scope}:${change.name}@${change.before}->${change.after}`).join(',')}`,
+    title: `${changedNonRegistry.length} non-registry dependency source${changedNonRegistry.length === 1 ? '' : 's'} changed`,
+    description: 'Existing dependencies now resolve from a changed Git, URL, workspace, archive, or local source, bypassing npm registry integrity and provenance controls.',
+    category: 'dependency',
+    severity: 'high',
+    score: Math.min(24, 17 + changedNonRegistry.length),
+    evidence: changedNonRegistry.slice(0, 20).map((change) => ({
+      file: 'package.json',
+      message: `${change.scope}: ${change.name}@${change.before ?? '(unknown)'} → ${change.after ?? '(unknown)'}`,
+    })),
+    remediation: 'Prefer a reviewed registry release with integrity metadata, or independently verify the new source and pin an immutable commit plus every lifecycle script.',
+    tags: ['dependency', 'non-registry', 'changed'],
+  });
+  if (registryAdded.length > 0) drafts.push({
     id: 'dependencies.runtime.added',
-    identity: `dependencies:${registry.map((change) => `${change.scope}:${change.name}@${change.after}`).join(',')}`,
-    title: `${registry.length} new shipped dependenc${registry.length === 1 ? 'y' : 'ies'}`,
+    identity: `dependencies:${registryAdded.map((change) => `${change.scope}:${change.name}@${change.after}`).join(',')}`,
+    title: `${registryAdded.length} new shipped dependenc${registryAdded.length === 1 ? 'y' : 'ies'}`,
     description: 'New runtime, optional, or peer dependencies expand the package supply-chain and install surface.',
     category: 'dependency',
-    severity: registry.length > 10 ? 'medium' : 'low',
-    score: Math.min(14, 3 + registry.length),
-    evidence: registry.slice(0, 20).map((change) => ({ file: 'package.json', message: `${change.scope}: ${change.name}@${change.after ?? '(unknown)'}` })),
+    severity: registryAdded.length > 10 ? 'medium' : 'low',
+    score: Math.min(14, 3 + registryAdded.length),
+    evidence: registryAdded.slice(0, 20).map((change) => ({ file: 'package.json', message: `${change.scope}: ${change.name}@${change.after ?? '(unknown)'}` })),
     remediation: 'Review the ownership, release age, lifecycle scripts, and transitive tree of each added dependency.',
     tags: ['dependency'],
   });
@@ -705,7 +724,8 @@ function isNonRegistryDependencySpecifier(value: string | undefined): boolean {
   const specifier = value.trim();
   if (/^npm:/iu.test(specifier)) return false;
   return /^(?:file|link|workspace|https?|ssh|git(?:\+[^:]+)?|github|gitlab|bitbucket):/iu.test(specifier)
-    || /^(?:\.{1,2}[\\/]|[/\\]|~[\\/]|[a-z]:[\\/])/iu.test(specifier)
+    || /^(?:\.{1,2}[\\/]|[/\\]|~[\\/]|[a-z]:(?:[\\/]|(?=[^\\/])))/iu.test(specifier)
+    || /^(?![~^<>=*|])[^:\s]+\.(?:tgz|tar(?:\.gz)?)$/iu.test(specifier)
     || /^[^@\s]+@[^:\s]+:.+/u.test(specifier)
     || /^[^@\s/]+\/[^\s/]+(?:#.*)?$/u.test(specifier);
 }

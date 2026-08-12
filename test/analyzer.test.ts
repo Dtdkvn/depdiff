@@ -356,6 +356,63 @@ describe('analyzeDiff', () => {
   });
 
   it.each([
+    'git+ssh://git@github.com/reviewed/source.git#0123456789abcdef',
+    'file:../vendor/source',
+    'ssh://git@example.test/reviewed/source.git#0123456789abcdef',
+  ])('fails a high-severity policy when a registry dependency switches to %s', async (specifier) => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({
+        name: 'dependency-transition', version: '1.0.0', dependencies: { setup: '^1.2.3' },
+      }),
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({
+        name: 'dependency-transition', version: '1.1.0', dependencies: { setup: specifier },
+      }),
+    });
+    const report = await audit(before, after, { offline: true, failOn: 'high' });
+    const finding = report.findings.find((entry) => entry.id === 'dependencies.non-registry.changed');
+    expect(finding).toMatchObject({ severity: 'high', tags: ['dependency', 'non-registry', 'changed'] });
+    expect(finding?.evidence[0]?.message).toContain(`setup@^1.2.3 → ${specifier}`);
+    expect(report.findings.map((entry) => entry.id)).not.toContain('dependencies.runtime.added');
+    expect(report.policy.passed).toBe(false);
+    expect(report.policy.violations.map((violation) => violation.rule)).toContain('failOn');
+  });
+
+  it('flags a changed non-registry source without treating it as a new dependency', async () => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({
+        name: 'dependency-transition', version: '1.0.0', dependencies: { setup: 'file:../vendor/v1' },
+      }),
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({
+        name: 'dependency-transition', version: '1.1.0', dependencies: { setup: 'git@github.com:reviewed/v2.git' },
+      }),
+    });
+    const ids = (await audit(before, after, { offline: true })).findings.map((entry) => entry.id);
+    expect(ids).toContain('dependencies.non-registry.changed');
+    expect(ids).not.toContain('dependencies.non-registry.added');
+    expect(ids).not.toContain('dependencies.runtime.added');
+  });
+
+  it('does not report a non-registry transition when a dependency returns to the registry', async () => {
+    const before = await makePackage({
+      'package.json': JSON.stringify({
+        name: 'dependency-transition', version: '1.0.0', dependencies: { setup: 'file:../vendor/source' },
+      }),
+    });
+    const after = await makePackage({
+      'package.json': JSON.stringify({
+        name: 'dependency-transition', version: '1.1.0', dependencies: { setup: '^1.2.3' },
+      }),
+    });
+    expect((await audit(before, after, { offline: true })).findings.map((entry) => entry.id)).not.toContain(
+      'dependencies.non-registry.changed',
+    );
+  });
+
+  it.each([
     'git+ssh://git@github.com/reviewed/source.git#0123456',
     'git@github.com:reviewed/source.git#0123456',
     'ssh://git@example.test/source.git',
@@ -363,12 +420,17 @@ describe('analyzeDiff', () => {
     '../vendor/source',
     '/opt/vendor/source',
     'C:\\vendor\\source',
+    'C:vendor\\source',
+    'D:foo.tgz',
     'workspace:*',
+    'foo.tgz',
+    'foo.tar.gz',
+    'foo.tar',
   ])('classifies %s as a non-registry dependency source', (specifier) => {
     expect(__test.isNonRegistryDependencySpecifier(specifier)).toBe(true);
   });
 
-  it.each(['npm:reviewed-source@1.2.3', '^1.2.3', 'latest'])('keeps %s in the registry-backed class', (specifier) => {
+  it.each(['npm:reviewed-source@1.2.3', '^1.2.3', '~1.2.3', '>=1.0.0', '1.2.3', 'latest', 'next'])('keeps %s in the registry-backed class', (specifier) => {
     expect(__test.isNonRegistryDependencySpecifier(specifier)).toBe(false);
   });
 });

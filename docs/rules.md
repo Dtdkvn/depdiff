@@ -15,7 +15,8 @@ Rule IDs are stable within the v1 report schema. A detector may add a suffix for
 | `install-script.added` | high/critical | A lifecycle hook was added; suspicious downloader/shell tokens raise severity |
 | `install-script.changed` | medium/critical | Existing lifecycle command changed |
 | `dependencies.runtime.added` | low/medium | New shipped dependencies expand trust |
-| `dependencies.non-registry.added` | high | New Git, URL, or local dependencies bypass registry integrity and provenance controls |
+| `dependencies.non-registry.added` | high | New Git, URL, workspace, archive, or local dependencies bypass registry integrity and provenance controls |
+| `dependencies.non-registry.changed` | high | Existing dependency switched to or changed a Git, URL, workspace, archive, or local source |
 | `binary.native.added` | high | Native executable/library payload added |
 | `binary.added` | medium | Other binary payload added |
 | `binary.native.changed` | high | Existing native executable/library payload changed |

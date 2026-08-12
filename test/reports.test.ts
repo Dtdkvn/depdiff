@@ -51,6 +51,23 @@ describe('report formats', () => {
     expect(renderHtml(report)).toContain('Policy configuration warning');
   });
 
+  it('preserves policy configuration warnings in SARIF-only artifacts', async () => {
+    const report = await audit(safe, risky, { offline: true });
+    report.policy.warnings = [{ rule: 'maxRiskScore-without-failOn', message: 'Add an explicit failOn severity.' }];
+    const sarif = JSON.parse(renderSarif(report)) as {
+      runs: Array<{ invocations: Array<{ toolExecutionNotifications?: Array<{
+        descriptor: { id: string };
+        level: string;
+        message: { text: string };
+      }> }> }>;
+    };
+    expect(sarif.runs[0]?.invocations[0]?.toolExecutionNotifications).toEqual([{
+      descriptor: { id: 'maxRiskScore-without-failOn' },
+      level: 'warning',
+      message: { text: 'maxRiskScore-without-failOn: Add an explicit failOn severity.' },
+    }]);
+  });
+
   it('keeps HTML configuration warnings visible when the policy also fails', async () => {
     const report = await audit(safe, risky, { offline: true });
     report.policy = {
