@@ -82,6 +82,8 @@ export interface FileSummary {
   size: number;
   sha256: string;
   mode: number;
+  /** False when the source filesystem cannot represent portable executable bits reliably. */
+  modeKnown: boolean;
   kind: 'text' | 'binary' | 'symlink';
 }
 

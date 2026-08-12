@@ -48,7 +48,20 @@ describe('report formats', () => {
     const report = await audit(safe, risky, { offline: true });
     report.policy.warnings = [{ rule: 'maxRiskScore-without-failOn', message: 'Add an explicit failOn severity.' }];
     expect(renderMarkdown(report)).toContain('## Policy warnings');
-    expect(renderHtml(report)).toContain('Policy passed with a configuration warning');
+    expect(renderHtml(report)).toContain('Policy configuration warning');
+  });
+
+  it('keeps HTML configuration warnings visible when the policy also fails', async () => {
+    const report = await audit(safe, risky, { offline: true });
+    report.policy = {
+      passed: false,
+      violations: [{ rule: 'failOn', message: 'A high-severity finding was detected.', findingFingerprints: [] }],
+      warnings: [{ rule: 'maxRiskScore-without-failOn', message: 'Add an explicit failOn severity.' }],
+    };
+    const html = renderHtml(report);
+    expect(html).toContain('Policy failed');
+    expect(html).toContain('Policy configuration warning');
+    expect(html).toContain('Add an explicit failOn severity.');
   });
 
   it('normalizes package-controlled newlines in Markdown contexts', async () => {

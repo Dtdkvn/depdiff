@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import stat
 import sys
 from pathlib import Path, PurePosixPath
@@ -40,8 +39,13 @@ def main() -> None:
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
             with bundle.open(entry, pwd=PASSWORD) as source, target.open("xb") as output:
-                shutil.copyfileobj(source, output, length=64 * 1024)
-            if target.stat().st_size != entry.file_size:
+                written = 0
+                while chunk := source.read(64 * 1024):
+                    written += len(chunk)
+                    if written > entry.file_size or written > MAX_FILE_BYTES:
+                        raise ValueError(f"dataset ZIP entry exceeded its declared size: {entry.filename}")
+                    output.write(chunk)
+            if written != entry.file_size or target.stat().st_size != entry.file_size:
                 raise ValueError(f"dataset ZIP entry changed size while extracting: {entry.filename}")
 
 

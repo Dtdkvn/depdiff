@@ -6,7 +6,7 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) conventi
 
 ### Fixed
 
-- normalized host-only file mode differences while preserving executable transitions, so directory/tarball comparisons are identical on Windows, Docker Desktop bind mounts, and native Linux;
+- marks synthetic native-Windows and Windows-backed Docker Desktop 9p bind modes unknown while preserving authoritative tar-header modes and real executable transitions;
 - added a labeled detector benchmark with integrity-pinned benign releases, a human-vetted Datadog compromise sample, synthetic evasive cases, and enforced precision/recall/false-positive thresholds;
 - raised non-registry runtime dependencies to a dedicated high-severity finding and warned when `maxRiskScore` is configured without an explicit severity threshold;
 - made installed-tarball smoke tests exercise the actual `.bin` artifact on Windows and POSIX on every supported Node runtime;

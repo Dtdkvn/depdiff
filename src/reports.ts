@@ -127,11 +127,13 @@ export function renderHtml(report: DiffReport): string {
   const findings = report.findings.length === 0
     ? '<div class="empty"><div class="empty-icon">✓</div><h3>No heuristic risk findings</h3><p>Review the inventory and metadata changes before approval.</p></div>'
     : report.findings.map(renderFindingCard).join('');
-  const policyBlock = report.policy.warnings.length > 0 && report.policy.passed
-    ? `<div class="policy warn"><span>!</span><div><strong>Policy passed with a configuration warning</strong><small>${escapeHtml(report.policy.warnings.map((warning) => warning.message).join(' · '))}</small></div></div>`
-    : report.policy.passed
+  const policyStatus = report.policy.passed
     ? '<div class="policy pass"><span>✓</span><div><strong>Policy passed</strong><small>No configured rule was violated.</small></div></div>'
     : `<div class="policy fail"><span>!</span><div><strong>Policy failed</strong><small>${escapeHtml(report.policy.violations.map((violation) => violation.message).join(' · '))}</small></div></div>`;
+  const policyWarning = report.policy.warnings.length > 0
+    ? `<div class="policy warn"><span>!</span><div><strong>Policy configuration warning</strong><small>${escapeHtml(report.policy.warnings.map((warning) => warning.message).join(' · '))}</small></div></div>`
+    : '';
+  const policyBlock = `${policyStatus}${policyWarning}`;
   const data = safeScriptJson(report);
   return `<!doctype html>
 <html lang="en">

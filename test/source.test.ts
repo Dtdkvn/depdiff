@@ -80,6 +80,22 @@ describe('secure source loading', () => {
     await expect(audit(safe, traversalArchive, { offline: true })).rejects.toThrow(/path traversal/);
   });
 
+  it('preserves a real executable transition encoded in tar headers', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'depdiff-mode-tar-'));
+    temporaryPaths.push(root);
+    const before = path.join(root, 'before.tgz');
+    const after = path.join(root, 'after.tgz');
+    const script = Buffer.from('#!/bin/sh\necho reviewed\n');
+    await writeFile(before, makeSingleEntryTar('script.sh', '0', '', script, 0o644));
+    await writeFile(after, makeSingleEntryTar('script.sh', '0', '', script, 0o755));
+    const report = await audit(before, after, { offline: true });
+    expect(report.inventory.modified[0]).toMatchObject({
+      before: { mode: 0o644, modeKnown: true },
+      after: { mode: 0o755, modeKnown: true },
+    });
+    expect(report.findings.map((finding) => finding.id)).toContain('files.executable.changed');
+  });
+
   it('aborts archives that exceed the decompression ratio limit', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'depdiff-ratio-tar-'));
     temporaryPaths.push(root);
@@ -193,10 +209,16 @@ describe('secure source loading', () => {
   });
 });
 
-function makeSingleEntryTar(name: string, type: '0' | '2', link = '', content = Buffer.alloc(0)): Buffer {
+function makeSingleEntryTar(
+  name: string,
+  type: '0' | '2',
+  link = '',
+  content = Buffer.alloc(0),
+  mode = 0o644,
+): Buffer {
   const header = Buffer.alloc(512);
   header.write(name, 0, 100, 'utf8');
-  writeOctal(header, 0o644, 100, 8);
+  writeOctal(header, mode, 100, 8);
   writeOctal(header, 0, 108, 8);
   writeOctal(header, 0, 116, 8);
   writeOctal(header, content.length, 124, 12);
@@ -272,5 +294,11 @@ describe('portable package modes', () => {
     expect(__test.normalizePackageMode(0o100644, 'text')).not.toBe(
       __test.normalizePackageMode(0o100755, 'text'),
     );
+  });
+
+  it('marks native Windows and Windows-backed Docker Desktop 9p modes as unknown', () => {
+    expect(__test.directoryPermissionModesReliable('win32', 0)).toBe(false);
+    expect(__test.directoryPermissionModesReliable('linux', 0x01021997)).toBe(false);
+    expect(__test.directoryPermissionModesReliable('linux', 0x794c7630)).toBe(true);
   });
 });

@@ -12,6 +12,7 @@ import {
   rename,
   rm,
   stat,
+  statfs,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -371,6 +372,7 @@ async function loadTarball(
   }
   let entries = 0;
   let totalBytes = 0;
+  const archiveModes = new Map<string, number | undefined>();
   try {
     const parser = new tar.Parser({ file: archive, strict: true, maxDecompressionRatio: options.limits.maxCompressionRatio });
     parser.on('entry', (entry: tar.ReadEntry) => {
@@ -384,6 +386,9 @@ async function loadTarball(
         if (totalBytes > options.limits.maxTotalBytes) throw new UserError('Archive exceeds the total uncompressed size limit.');
         if (!['File', 'OldFile', 'ContiguousFile', 'Directory'].includes(entry.type)) {
           throw new UserError(`Archive contains unsupported ${entry.type} entry: ${entry.path}`);
+        }
+        if (entry.type !== 'Directory') {
+          archiveModes.set(normalizeArchivePath(entry.path), Number.isInteger(entry.mode) ? entry.mode : undefined);
         }
       } catch (error) {
         validationError = error instanceof Error ? error : new Error(String(error));
@@ -441,6 +446,8 @@ async function loadTarball(
     }
     const root = await findArchiveRoot(temporary);
     const loaded = await scanDirectory(root, source, options);
+    applyArchiveModes(temporary, root, archiveModes, loaded.files);
+    loaded.snapshot.files = [...loaded.files.values()].map(stripLoadedFile);
     assertArchiveCoverage(temporary, root, extractedFiles, loaded.files, options.ignore);
     return loaded;
   } finally {
@@ -541,6 +548,7 @@ async function scanDirectory(
           size: Buffer.byteLength(target),
           sha256: sha256(target),
           mode: normalizePackageMode(details.mode, 'symlink'),
+          modeKnown: true,
           kind: 'symlink',
         });
         continue;
@@ -572,6 +580,7 @@ async function scanDirectory(
         size: details.size,
         sha256: sha256(buffer),
         mode: normalizePackageMode(details.mode, kind),
+        modeKnown: true,
         kind,
         // Files past the analyzed-text limit still keep a copied prefix so the
         // analyzer can classify them (shebang, JS shape) and fail closed.
@@ -581,14 +590,16 @@ async function scanDirectory(
   }
 
   await visit(root);
+  const filesystemType = source.kind === 'directory' ? await statfs(root).then((details) => details.type).catch(() => undefined) : undefined;
+  if (source.kind === 'directory' && !directoryPermissionModesReliable(process.platform, filesystemType)) {
+    for (const file of files.values()) {
+      if (file.kind === 'symlink') continue;
+      file.mode = 0o644;
+      file.modeKnown = false;
+    }
+  }
   const metadata = parsePackageMetadata(packageManifest, source);
-  const summaries: FileSummary[] = [...files.values()].map((file) => ({
-    path: file.path,
-    size: file.size,
-    sha256: file.sha256,
-    mode: file.mode,
-    kind: file.kind,
-  }));
+  const summaries: FileSummary[] = [...files.values()].map(stripLoadedFile);
   return {
     files,
     snapshot: {
@@ -598,6 +609,53 @@ async function scanDirectory(
       totalBytes,
     },
   };
+}
+
+function stripLoadedFile(file: LoadedFile): FileSummary {
+  return {
+    path: file.path,
+    size: file.size,
+    sha256: file.sha256,
+    mode: file.mode,
+    modeKnown: file.modeKnown,
+    kind: file.kind,
+  };
+}
+
+/**
+ * Native Windows and Docker Desktop's Windows-backed 9p bind mounts synthesize
+ * one mode for every file (commonly 0666 or 0777). Treat those executable bits as
+ * unknown instead of turning an ordinary source tree into an all-executable
+ * package. Archive modes are read from tar headers and remain authoritative.
+ */
+function directoryPermissionModesReliable(platform: NodeJS.Platform, filesystemType?: number | bigint): boolean {
+  if (platform === 'win32') return false;
+  // Linux 9p magic; Docker Desktop/WSL uses this for Windows drvfs mounts.
+  return Number(filesystemType) !== 0x01021997;
+}
+
+function applyArchiveModes(
+  temporary: string,
+  root: string,
+  archiveModes: ReadonlyMap<string, number | undefined>,
+  files: Map<string, LoadedFile>,
+): void {
+  const rootPrefix = normalizeArchivePath(path.relative(temporary, root));
+  for (const file of files.values()) {
+    const archivePath = normalizeArchivePath(rootPrefix ? `${rootPrefix}/${file.path}` : file.path);
+    const mode = archiveModes.get(archivePath);
+    if (mode === undefined) {
+      file.mode = file.kind === 'symlink' ? 0o777 : 0o644;
+      file.modeKnown = false;
+    } else {
+      file.mode = normalizePackageMode(mode, file.kind);
+      file.modeKnown = true;
+    }
+  }
+}
+
+function normalizeArchivePath(value: string): string {
+  return value.replaceAll('\\', '/').replace(/^(?:\.\/)+/u, '').replace(/\/$/u, '');
 }
 
 /**
@@ -694,4 +752,5 @@ export const __test = {
   readRegistryDocument,
   verifyArchiveDigest,
   normalizePackageMode,
+  directoryPermissionModesReliable,
 };

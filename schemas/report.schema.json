@@ -30,11 +30,23 @@
     },
     "policy": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["passed", "violations", "warnings"],
       "properties": {
         "passed": { "type": "boolean" },
         "violations": { "type": "array" },
-        "warnings": { "type": "array", "items": { "type": "object", "required": ["rule", "message"] } }
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["rule", "message"],
+            "properties": {
+              "rule": { "type": "string" },
+              "message": { "type": "string" }
+            }
+          }
+        }
       }
     },
     "analysis": {

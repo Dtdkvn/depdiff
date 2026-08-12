@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, lstat, readFile, readdir, rm } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdtemp, mkdir, lstat, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -38,22 +39,22 @@ try {
   await tar.extract({ file: tarball, cwd: unpacked, strict: true });
   const packageRoot = path.join(unpacked, 'package');
   const validatedLinks = await validatePackedDocumentation(packageRoot);
+  const packageDocument = JSON.parse(await readFile(path.join(packageRoot, 'package.json'), 'utf8'));
 
   const installRoot = path.join(temporary, 'installed');
-  runNpm([
-    'install', '--prefix', installRoot, tarball, '--ignore-scripts', '--no-audit', '--no-fund', '--offline',
-  ], projectRoot);
+  await prepareLockedConsumer({ installRoot, tarball, packageDocument });
+  runNpm(['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--offline'], installRoot);
   const installedPackage = path.join(installRoot, 'node_modules', 'depdiff-audit');
-  const packageDocument = JSON.parse(await readFile(path.join(installedPackage, 'package.json'), 'utf8'));
+  const installedDocument = JSON.parse(await readFile(path.join(installedPackage, 'package.json'), 'utf8'));
   const cli = path.join(installedPackage, 'dist', 'cli.js');
   const version = run(process.execPath, [cli, '--version'], installRoot).trim();
-  if (version !== packageDocument.version) {
-    throw new Error(`Packed CLI version ${version} does not match package version ${packageDocument.version}.`);
+  if (version !== installedDocument.version) {
+    throw new Error(`Packed CLI version ${version} does not match package version ${installedDocument.version}.`);
   }
 
   const safeFixture = path.join(installedPackage, 'fixtures', 'safe-v1');
   const riskyFixture = path.join(installedPackage, 'fixtures', 'risky-v2');
-  await verifyBinEntryPoint({ installRoot, temporary, packageDocument, safeFixture, riskyFixture });
+  await verifyBinEntryPoint({ installRoot, temporary, packageDocument: installedDocument, safeFixture, riskyFixture });
 
   const reportPath = path.join(temporary, 'smoke.json');
   run(process.execPath, [
@@ -74,6 +75,70 @@ try {
   process.stdout.write(`Packed ${filename}: CLI ${version}, ${report.findings.length} findings, ${validatedLinks} local documentation targets verified.\n`);
 } finally {
   await rm(temporary, { recursive: true, force: true });
+}
+
+/**
+ * npm must resolve semver dependencies through registry packuments when a local
+ * tarball is installed without a lockfile. That makes an apparently "offline"
+ * smoke test pass only when the developer's cache happens to contain metadata.
+ * Build a consumer lock from the reviewed project lock instead: npm ci then
+ * installs the packed artifact and its exact, integrity-pinned production
+ * dependency closure without consulting package code or the network.
+ */
+async function prepareLockedConsumer({ installRoot, tarball, packageDocument }) {
+  const projectLock = JSON.parse(await readFile(path.join(projectRoot, 'package-lock.json'), 'utf8'));
+  if (projectLock.lockfileVersion !== 3 || typeof projectLock.packages !== 'object') {
+    throw new Error('Package smoke requires a package-lock.json at lockfileVersion 3.');
+  }
+  if (packageDocument.name !== projectLock.name || packageDocument.version !== projectLock.version) {
+    throw new Error('Packed package identity does not match the reviewed project lock.');
+  }
+  const lockedPackages = {};
+  for (const [location, details] of Object.entries(projectLock.packages)) {
+    if (!location || details.dev === true) continue;
+    if (details.link === true || typeof details.resolved !== 'string' || typeof details.integrity !== 'string') {
+      throw new Error(`Production lock entry ${location} is not an integrity-pinned registry artifact.`);
+    }
+    lockedPackages[location] = details;
+  }
+  for (const dependency of Object.keys(packageDocument.dependencies ?? {})) {
+    if (!lockedPackages[`node_modules/${dependency}`]) {
+      throw new Error(`Production dependency ${dependency} is absent from the reviewed package lock.`);
+    }
+  }
+
+  await mkdir(installRoot);
+  const tarballReference = `file:${path.relative(installRoot, tarball).split(path.sep).join('/')}`;
+  const integrity = `sha512-${createHash('sha512').update(await readFile(tarball)).digest('base64')}`;
+  const consumerName = 'depdiff-package-smoke-consumer';
+  const consumer = {
+    name: consumerName,
+    version: '0.0.0',
+    private: true,
+    dependencies: { [packageDocument.name]: tarballReference },
+  };
+  const packageLock = {
+    name: consumerName,
+    version: '0.0.0',
+    lockfileVersion: 3,
+    requires: true,
+    packages: {
+      '': consumer,
+      ...lockedPackages,
+      [`node_modules/${packageDocument.name}`]: {
+        name: packageDocument.name,
+        version: packageDocument.version,
+        resolved: tarballReference,
+        integrity,
+        license: packageDocument.license,
+        dependencies: packageDocument.dependencies,
+        bin: packageDocument.bin,
+        engines: packageDocument.engines,
+      },
+    },
+  };
+  await writeFile(path.join(installRoot, 'package.json'), `${JSON.stringify(consumer, null, 2)}\n`, 'utf8');
+  await writeFile(path.join(installRoot, 'package-lock.json'), `${JSON.stringify(packageLock, null, 2)}\n`, 'utf8');
 }
 
 /**

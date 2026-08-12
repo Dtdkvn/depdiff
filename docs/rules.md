@@ -20,8 +20,10 @@ Rule IDs are stable within the v1 report schema. A detector may add a suffix for
 | `binary.added` | medium | Other binary payload added |
 | `binary.native.changed` | high | Existing native executable/library payload changed |
 | `binary.changed` | medium | Existing binary payload changed or text became binary |
-| `files.executable.added` | medium | New file has executable permission bits |
-| `files.executable.changed` | medium | Existing file newly gained executable permission bits |
+| `files.executable.added` | medium | New file has reliable executable permission bits |
+| `files.executable.changed` | medium | Existing file newly gained reliable executable permission bits |
+
+Native Windows filesystems and Windows-backed Docker Desktop 9p bind mounts do not carry portable Unix executable metadata. Depdiff marks those modes unknown, excludes them from mode-only findings, and still uses authoritative tar-header modes for npm archives.
 | `files.symlink.added` | medium | Local input has a new symlink (never followed) |
 | `files.symlink.changed` | medium | Local symlink target or file kind changed |
 | `inventory.size.spike` | medium | Unpacked size grew sharply |

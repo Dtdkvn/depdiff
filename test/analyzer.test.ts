@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { audit } from '../src/audit.js';
-import { analyzeDiff, shannonEntropy } from '../src/analyzer.js';
+import { __test, analyzeDiff, shannonEntropy } from '../src/analyzer.js';
 import { DEFAULT_LIMITS } from '../src/constants.js';
 import type { FileSummary, LoadedFile, LoadedPackage, PackageMetadata } from '../src/types.js';
 
@@ -354,6 +354,23 @@ describe('analyzeDiff', () => {
     );
     expect(finding).toMatchObject({ severity: 'high', tags: ['dependency', 'non-registry'] });
   });
+
+  it.each([
+    'git+ssh://git@github.com/reviewed/source.git#0123456',
+    'git@github.com:reviewed/source.git#0123456',
+    'ssh://git@example.test/source.git',
+    'file:../vendor/source',
+    '../vendor/source',
+    '/opt/vendor/source',
+    'C:\\vendor\\source',
+    'workspace:*',
+  ])('classifies %s as a non-registry dependency source', (specifier) => {
+    expect(__test.isNonRegistryDependencySpecifier(specifier)).toBe(true);
+  });
+
+  it.each(['npm:reviewed-source@1.2.3', '^1.2.3', 'latest'])('keeps %s in the registry-backed class', (specifier) => {
+    expect(__test.isNonRegistryDependencySpecifier(specifier)).toBe(false);
+  });
 });
 
 describe('entropy helper', () => {
@@ -375,7 +392,7 @@ async function makePackage(files: Record<string, string>): Promise<string> {
 }
 
 function syntheticFile(filePath: string, digest: string, mode: number, kind: FileSummary['kind']): LoadedFile {
-  return { path: filePath, size: 1, sha256: digest, mode, kind };
+  return { path: filePath, size: 1, sha256: digest, mode, modeKnown: true, kind };
 }
 
 function syntheticPackage(version: string, entries: Record<string, LoadedFile>): LoadedPackage {
@@ -390,7 +407,7 @@ function syntheticPackage(version: string, entries: Record<string, LoadedFile>):
       source: { input: 'synthetic', kind: 'directory', resolved: 'synthetic' },
       package: packageMetadata,
       files: [...files.values()].map((file) => ({
-        path: file.path, size: file.size, sha256: file.sha256, mode: file.mode, kind: file.kind,
+        path: file.path, size: file.size, sha256: file.sha256, mode: file.mode, modeKnown: file.modeKnown, kind: file.kind,
       })),
       totalBytes: files.size,
     },

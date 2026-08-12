@@ -51,7 +51,7 @@ Local directories are traversed with `lstat`/`realpath` containment checks. Syml
 
 ## Snapshot and analysis
 
-Each file has a relative path, size, mode, kind, and SHA-256. Only bounded files are kept in memory for content analysis. `package.json` is parsed as data with defensive normalization and fails closed above the parsed-text limit so lifecycle scripts cannot disappear from policy evaluation; target dependencies are never installed.
+Each file has a relative path, size, normalized mode, explicit mode-reliability flag, kind, and SHA-256. Tar-header modes are authoritative; native Windows and Windows-backed Docker Desktop 9p bind modes are marked unknown so host synthesis cannot create false executable transitions. Only bounded files are kept in memory for content analysis. `package.json` is parsed as data with defensive normalization and fails closed above the parsed-text limit so lifecycle scripts cannot disappear from policy evaluation; target dependencies are never installed.
 
 Source analyzers combine Babel AST parsing with conservative lexical fallbacks. They profile capability sets and literal network hosts for both versions, then report capabilities or hosts that occur only in the candidate version. Inventory, script, dependency, maintainer, registry provenance, entropy, minification, and binary detectors operate directly on the normalized delta.
 

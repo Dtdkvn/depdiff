@@ -175,6 +175,9 @@ export function analyzeDiff(before: LoadedPackage, after: LoadedPackage, options
       notes: [
         'Depdiff performs static analysis only and never executes package code or lifecycle scripts.',
         'Heuristics are review signals, not proof that code is malicious or safe.',
+        ...([before, after].some((loaded) => [...loaded.files.values()].some((file) => !file.modeKnown))
+          ? ['Executable permission bits were unavailable for at least one local filesystem input; mode-only changes involving that input were not inferred.']
+          : []),
       ],
     },
   };
@@ -188,7 +191,8 @@ function diffInventory(before: LoadedPackage, after: LoadedPackage): InventoryDi
   for (const [filePath, next] of after.files) {
     const previous = before.files.get(filePath);
     if (!previous) added.push(stripContent(next));
-    else if (previous.sha256 !== next.sha256 || previous.mode !== next.mode) {
+    else if (previous.sha256 !== next.sha256
+      || (previous.modeKnown && next.modeKnown && previous.mode !== next.mode)) {
       modified.push({ before: stripContent(previous), after: stripContent(next) });
     } else unchanged += 1;
   }
@@ -202,7 +206,9 @@ function diffInventory(before: LoadedPackage, after: LoadedPackage): InventoryDi
 }
 
 function stripContent(file: LoadedFile): FileSummary {
-  return { path: file.path, size: file.size, sha256: file.sha256, mode: file.mode, kind: file.kind };
+  return {
+    path: file.path, size: file.size, sha256: file.sha256, mode: file.mode, modeKnown: file.modeKnown, kind: file.kind,
+  };
 }
 
 function diffMetadata(before: LoadedPackage, after: LoadedPackage): MetadataDiff {
@@ -696,8 +702,12 @@ function dependencyFindings(metadata: MetadataDiff): FindingDraft[] {
 
 function isNonRegistryDependencySpecifier(value: string | undefined): boolean {
   if (!value) return false;
-  return /^(?:file|link|https?|git(?:\+[^:]+)?|github|gitlab|bitbucket):/i.test(value)
-    || /^[^@\s/]+\/[^\s/]+(?:#.*)?$/u.test(value);
+  const specifier = value.trim();
+  if (/^npm:/iu.test(specifier)) return false;
+  return /^(?:file|link|workspace|https?|ssh|git(?:\+[^:]+)?|github|gitlab|bitbucket):/iu.test(specifier)
+    || /^(?:\.{1,2}[\\/]|[/\\]|~[\\/]|[a-z]:[\\/])/iu.test(specifier)
+    || /^[^@\s]+@[^:\s]+:.+/u.test(specifier)
+    || /^[^@\s/]+\/[^\s/]+(?:#.*)?$/u.test(specifier);
 }
 
 function inventoryFindings(
@@ -741,7 +751,7 @@ function inventoryFindings(
       tags: ['binary', 'changed', ...(native ? ['native'] : [])],
     });
   }
-  const executables = inventory.added.filter((file) => file.kind !== 'binary' && (file.mode & 0o111) !== 0);
+  const executables = inventory.added.filter((file) => file.modeKnown && file.kind !== 'binary' && (file.mode & 0o111) !== 0);
   if (executables.length > 0) {
     drafts.push({
       id: 'files.executable.added',
@@ -757,7 +767,8 @@ function inventoryFindings(
     });
   }
   const executableTransitions = inventory.modified.filter(({ before: previous, after: next }) =>
-    next.kind !== 'binary' && (previous.mode & 0o111) === 0 && (next.mode & 0o111) !== 0,
+    previous.modeKnown && next.modeKnown
+      && next.kind !== 'binary' && (previous.mode & 0o111) === 0 && (next.mode & 0o111) !== 0,
   );
   if (executableTransitions.length > 0) {
     drafts.push({
@@ -1027,4 +1038,6 @@ function lineAt(source: string, index: number): string {
   return source.slice(start, end === -1 ? source.length : end);
 }
 
-export const __test = { diffInventory, diffMetadata, profilePackage, findEncodedToken, lineNumberAt };
+export const __test = {
+  diffInventory, diffMetadata, profilePackage, findEncodedToken, lineNumberAt, isNonRegistryDependencySpecifier,
+};

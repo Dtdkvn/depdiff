@@ -169,6 +169,9 @@ describe('distribution contracts', () => {
     expect(smoke).toContain("'docs/assets/demo.gif'");
     expect(smoke).toContain("'docs/assets/report-preview.png'");
     expect(smoke).toContain("'docs/precision-benchmark.md'");
+    expect(smoke).toContain('prepareLockedConsumer');
+    expect(smoke).toContain("createHash('sha512')");
+    expect(smoke).toContain("runNpm(['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--offline'], installRoot)");
   });
 });
 

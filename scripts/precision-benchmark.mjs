@@ -4,6 +4,7 @@ import { lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fetchBounded } from '../dist/bounded-fetch.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const manifestPath = path.join(projectRoot, 'benchmark', 'precision-corpus.json');
@@ -115,25 +116,30 @@ async function verifyPinnedRegistryMetadata(entry) {
   const [beforeName, beforeVersion] = splitSpecifier(entry.before);
   const [afterName, afterVersion] = splitSpecifier(entry.after);
   if (beforeName !== afterName) throw new Error(`Registry case ${entry.id} changes package identity.`);
-  const url = new URL(encodeURIComponent(beforeName), 'https://registry.npmjs.org/');
-  const response = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'depdiff-precision/0.1.0' } });
-  if (!response.ok) throw new Error(`Registry metadata returned ${response.status} for ${beforeName}.`);
-  const metadata = await response.json();
   for (const [version, expected] of [[beforeVersion, entry.integrity.before], [afterVersion, entry.integrity.after]]) {
-    const actual = metadata?.versions?.[version]?.dist?.integrity;
-    if (actual !== expected) {
-      throw new Error(`Pinned integrity mismatch for ${beforeName}@${version}: expected ${digestLabel(expected)}, got ${digestLabel(actual)}.`);
-    }
+    await verifyRegistryVersion(`${beforeName}@${version}`, expected, entry.id);
   }
 }
 
 async function verifyRegistryIntegrity(id, specifier, expected) {
+  await verifyRegistryVersion(specifier, expected, id);
+}
+
+async function verifyRegistryVersion(specifier, expected, id) {
   const [name, version] = splitSpecifier(specifier);
-  const url = new URL(encodeURIComponent(name), 'https://registry.npmjs.org/');
-  const response = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'depdiff-precision/0.1.0' } });
-  if (!response.ok) throw new Error(`Registry metadata returned ${response.status} for ${name}.`);
-  const metadata = await response.json();
-  const actual = metadata?.versions?.[version]?.dist?.integrity;
+  const url = new URL(`${encodeURIComponent(name)}/${encodeURIComponent(version)}`, 'https://registry.npmjs.org/');
+  const bytes = await fetchBounded(url, {
+    expectedHost: 'registry.npmjs.org',
+    label: `registry metadata for ${specifier}`,
+    maximumBytes: 1024 * 1024,
+    mediaTypes: ['application/json'],
+    accept: 'application/json',
+  });
+  const metadata = JSON.parse(bytes.toString('utf8'));
+  if (metadata?.name !== name || metadata?.version !== version) {
+    throw new Error(`Registry metadata identity mismatch for ${specifier}.`);
+  }
+  const actual = metadata?.dist?.integrity;
   if (actual !== expected) {
     throw new Error(`Pinned integrity mismatch for ${id}/${specifier}: expected ${digestLabel(expected)}, got ${digestLabel(actual)}.`);
   }
@@ -179,17 +185,14 @@ async function prepareDatasetSample(entry, root) {
 }
 
 async function fetchPinnedFile(url, maximumBytes) {
-  if (url.protocol !== 'https:' || url.host !== 'raw.githubusercontent.com') throw new Error(`Untrusted dataset URL: ${url.origin}`);
-  const response = await fetch(url, {
-    redirect: 'error',
-    headers: { accept: 'application/octet-stream', 'user-agent': 'depdiff-precision/0.1.0' },
+  const manifest = url.pathname.endsWith('.json');
+  return fetchBounded(url, {
+    expectedHost: 'raw.githubusercontent.com',
+    label: `dataset download ${url.pathname}`,
+    maximumBytes,
+    mediaTypes: manifest ? ['application/json', 'text/plain'] : ['application/zip', 'application/octet-stream'],
+    accept: manifest ? 'application/json,text/plain' : 'application/zip,application/octet-stream',
   });
-  if (!response.ok) throw new Error(`Dataset download returned ${response.status} for ${url.pathname}.`);
-  const declared = Number(response.headers.get('content-length') ?? 0);
-  if (declared > maximumBytes) throw new Error(`Dataset download exceeds ${maximumBytes} bytes: ${url.pathname}`);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length > maximumBytes) throw new Error(`Dataset download exceeds ${maximumBytes} bytes: ${url.pathname}`);
-  return bytes;
 }
 
 function assertSha256(label, bytes, expected) {
