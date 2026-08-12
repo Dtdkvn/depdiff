@@ -51,7 +51,7 @@ describe('distribution contracts', () => {
       };
     };
     expect(ci.jobs.quality.strategy.matrix.node).toEqual([22, 24]);
-    expect(ci.jobs.quality.steps.find((step) => step.run === 'npm run test:package')?.if).toBe('matrix.node == 24');
+    expect(ci.jobs.quality.steps.find((step) => step.run === 'npm run test:package')?.if).toBeUndefined();
     expect(ci.jobs.quality.steps.find((step) => step.uses?.startsWith('actions/upload-artifact@'))?.if).toBe('matrix.node == 24');
 
     for (const file of ['Dockerfile', path.join('action', 'Dockerfile')]) {

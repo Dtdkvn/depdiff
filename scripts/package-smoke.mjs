@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, lstat, readFile, readdir, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, lstat, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -53,7 +53,7 @@ try {
 
   const safeFixture = path.join(installedPackage, 'fixtures', 'safe-v1');
   const riskyFixture = path.join(installedPackage, 'fixtures', 'risky-v2');
-  await verifyBinEntryPoint({ installRoot, temporary, cli, packageDocument, safeFixture, riskyFixture });
+  await verifyBinEntryPoint({ installRoot, temporary, packageDocument, safeFixture, riskyFixture });
 
   const reportPath = path.join(temporary, 'smoke.json');
   run(process.execPath, [
@@ -83,44 +83,47 @@ try {
  * cannot catch it either, because a silent no-op also exits 0. So this checks
  * real stdout through the link and a non-zero exit on a failing policy.
  */
-async function verifyBinEntryPoint({ installRoot, temporary, cli, packageDocument, safeFixture, riskyFixture }) {
+async function verifyBinEntryPoint({ installRoot, temporary, packageDocument, safeFixture, riskyFixture }) {
   const binEntry = path.join(installRoot, 'node_modules', '.bin', 'depdiff');
-  const binDetails = await lstat(binEntry).catch(() => undefined);
-  if (!binDetails) throw new Error('npm install did not create node_modules/.bin/depdiff.');
-
-  let entry = binEntry;
-  if (!binDetails.isSymbolicLink()) {
-    // Windows installs shell/cmd shims that pass the real path, so build an
-    // equivalent symlink to keep covering the guard where it is possible.
-    entry = path.join(temporary, 'binlink', 'depdiff');
-    await mkdir(path.dirname(entry), { recursive: true });
-    try {
-      await symlink(cli, entry, 'file');
-    } catch (error) {
-      if (error?.code === 'EPERM' || error?.code === 'ENOSYS') {
-        process.stdout.write('Skipping .bin symlink check: this host does not permit creating file symlinks.\n');
-        return;
-      }
-      throw error;
-    }
+  const entry = process.platform === 'win32' ? `${binEntry}.cmd` : binEntry;
+  const binDetails = await lstat(entry).catch(() => undefined);
+  if (!binDetails) throw new Error(`npm install did not create ${path.relative(installRoot, entry)}.`);
+  if (process.platform !== 'win32' && !binDetails.isSymbolicLink()) {
+    throw new Error('npm install did not create node_modules/.bin/depdiff as a symlink.');
   }
 
-  const version = run(process.execPath, [entry, '--version'], installRoot).trim();
+  const versionResult = runBin(entry, ['--version'], installRoot);
+  if (versionResult.status !== 0) {
+    throw new Error(`Installed .bin entry failed --version with ${versionResult.status}:\n${versionResult.stderr || versionResult.stdout}`);
+  }
+  const version = versionResult.stdout.trim();
   if (version !== packageDocument.version) {
     throw new Error(
       `CLI invoked through ${entry} printed ${JSON.stringify(version)} instead of ${packageDocument.version}; the .bin entry point is not executing the CLI.`,
     );
   }
-  const failing = spawnSync(process.execPath, [
-    entry, 'compare', safeFixture, riskyFixture,
+  const failing = runBin(entry, [
+    'compare', safeFixture, riskyFixture,
     '--offline', '--fail-on', 'high', '--quiet', '--output', path.join(temporary, 'binlink.html'),
-  ], { cwd: installRoot, encoding: 'utf8', env: process.env, windowsHide: true });
-  if (failing.error) throw failing.error;
+  ], installRoot);
   if (failing.status !== 1) {
     throw new Error(
       `CLI invoked through ${entry} exited ${failing.status} on a failing policy; expected 1. A silent no-op also exits 0.\n${failing.stderr || failing.stdout}`,
     );
   }
+}
+
+function runBin(entry, args, cwd) {
+  // npm creates a JavaScript symlink on POSIX and a cmd.exe shim on Windows.
+  // Execute the artifact consumers actually receive on each platform.
+  if (process.platform === 'win32') {
+    return spawnSync(entry, args, {
+      cwd, encoding: 'utf8', env: process.env, windowsHide: true, shell: true,
+    });
+  }
+  return spawnSync(process.execPath, [entry, ...args], {
+    cwd, encoding: 'utf8', env: process.env, windowsHide: true,
+  });
 }
 
 async function validatePackedDocumentation(packageRoot) {
