@@ -33,6 +33,8 @@ Rule IDs are stable within the v1 report schema. A detector may add a suffix for
 | `provenance.attestations.removed` | high | Registry attestation advertised before, absent now |
 | `provenance.signatures.removed` | high | Registry signature advertised before, absent now |
 | `provenance.integrity.missing` | high | Registry version lacks `dist.integrity` |
-| `analysis.new-parse-failures` | low | More files fell back from AST to lexical analysis |
+| `analysis.parse-failure` | high | A shipped code file could not be parsed, so only lexical evidence was available for it |
+| `analysis.unanalyzed-code` | high | A shipped file that appears to be code could not be analyzed at all, for example because it exceeds the text-analysis limit |
+| `obfuscation.control-bytes` | high | A text file carries enough control bytes to defeat text detection, which hides code from analysis |
 
 Severities communicate urgency for review, not a malware verdict. Evidence and surrounding source determine whether a change is acceptable.
