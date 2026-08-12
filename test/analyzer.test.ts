@@ -437,6 +437,8 @@ describe('analyzeDiff', () => {
     '@foo\\bar\\baz',
     '@foo/bar#x',
     '@foo/bar\\baz',
+    '@s//p',
+    '@s/../p',
     '@foo/bar@file:..',
     '@foo/bar@github:reviewed/source',
     '.',
