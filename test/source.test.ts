@@ -7,7 +7,8 @@ import { gzipSync } from 'node:zlib';
 import * as tar from 'tar';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { audit } from '../src/audit.js';
-import { assertSafeArchivePath, __test } from '../src/source.js';
+import { assertArchiveCoverage, assertSafeArchivePath, __test } from '../src/source.js';
+
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const safe = path.join(projectRoot, 'fixtures', 'safe-v1');
@@ -214,6 +215,45 @@ function makeSingleEntryTar(name: string, type: '0' | '2', link = '', content = 
 function writeOctal(buffer: Buffer, value: number, offset: number, width: number): void {
   buffer.write(`${value.toString(8).padStart(width - 1, '0')}\0`, offset, width, 'ascii');
 }
+
+describe('archive coverage reconciliation', () => {
+  const temporary = path.join(path.sep === '\\' ? 'C:\\tmp' : '/tmp', 'depdiff-cov');
+  const root = path.join(temporary, 'package');
+
+  const inventoryOf = (paths: string[]): ReadonlyMap<string, unknown> => new Map(paths.map((filePath) => [filePath, {}]));
+
+  it('accepts an archive whose every shipped path was inventoried', () => {
+    expect(() => assertArchiveCoverage(
+      temporary,
+      root,
+      ['package/package.json', 'package/index.js', 'package/lib/a.js'],
+      inventoryOf(['package.json', 'index.js', 'lib/a.js']),
+      [],
+    )).not.toThrow();
+  });
+
+  it('fails closed when a case-colliding entry vanished during extraction', () => {
+    // What a case-insensitive host produces: INDEX.js and index.js collapse and
+    // only one survives, so the other is never inventoried.
+    expect(() => assertArchiveCoverage(
+      temporary,
+      root,
+      ['package/package.json', 'package/INDEX.js', 'package/index.js'],
+      inventoryOf(['package.json', 'index.js']),
+      [],
+    )).toThrow(/INDEX\.js/u);
+  });
+
+  it('ignores entries outside the detected root and explicitly ignored paths', () => {
+    expect(() => assertArchiveCoverage(
+      temporary,
+      root,
+      ['pax_global_header', 'package/index.js', 'package/test/big.bin'],
+      inventoryOf(['index.js']),
+      ['test/**'],
+    )).not.toThrow();
+  });
+});
 
 describe('text detection', () => {
   it('distinguishes text and NUL-containing binary samples', () => {

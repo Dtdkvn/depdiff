@@ -398,6 +398,9 @@ async function loadTarball(
   }
 
   const temporary = await mkdtemp(path.join(tmpdir(), 'depdiff-'));
+  // Archive paths of every file actually written, so the scanned inventory can
+  // be reconciled against them below.
+  const extractedFiles: string[] = [];
   try {
     try {
       let extractionError: UserError | undefined;
@@ -423,6 +426,7 @@ async function loadTarball(
           }
           extractedEntries += 1;
           extractedBytes += 'size' in entry ? entry.size : 0;
+          if (entry.type !== 'Directory') extractedFiles.push(entryPath);
           if (extractedEntries > options.limits.maxFiles || extractedBytes > options.limits.maxTotalBytes || ('size' in entry && entry.size > options.limits.maxFileBytes)) {
             extractionError = new UserError('Archive changed after preflight or exceeded configured extraction limits.');
             return false;
@@ -436,7 +440,9 @@ async function loadTarball(
       throw new UserError(`Cannot extract archive ${source.input}: ${error instanceof Error ? error.message : String(error)}`);
     }
     const root = await findArchiveRoot(temporary);
-    return await scanDirectory(root, source, options);
+    const loaded = await scanDirectory(root, source, options);
+    assertArchiveCoverage(temporary, root, extractedFiles, loaded.files, options.ignore);
+    return loaded;
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
@@ -450,6 +456,44 @@ export function assertSafeArchivePath(entryPath: string): void {
   }
   const parts = normalizedSlashes.split('/');
   if (parts.includes('..')) throw new UserError(`Archive entry attempts path traversal: ${entryPath}`);
+}
+
+/**
+ * Fails closed when a shipped archive entry is absent from the scanned
+ * inventory. Extraction writes to a host temporary directory, so on a
+ * case-insensitive filesystem two entries differing only in case collapse into
+ * one file and the survivor silently replaces the other. That made the verdict
+ * depend on the reviewer's operating system: a tarball shipping both
+ * `INDEX.js` (malicious, referenced by `main`) and `index.js` (benign) scanned
+ * clean on Windows and macOS while a Linux consumer installed the malicious
+ * file. Coverage of every shipped path is a documented invariant, so a gap is
+ * an error rather than a silent omission.
+ */
+export function assertArchiveCoverage(
+  temporary: string,
+  root: string,
+  extractedFiles: string[],
+  inventory: ReadonlyMap<string, unknown>,
+  ignore: string[],
+): void {
+  const missing = new Set<string>();
+  for (const entryPath of extractedFiles) {
+    const absolute = path.resolve(temporary, entryPath);
+    const relativeToRoot = path.relative(root, absolute);
+    // Entries outside the detected root are not part of the scanned package.
+    if (relativeToRoot === '' || relativeToRoot.startsWith('..') || path.isAbsolute(relativeToRoot)) continue;
+    const key = relativeToRoot.split(path.sep).join('/');
+    if (inventory.has(key)) continue;
+    if (ignore.some((pattern) => minimatch(key, pattern, { dot: true }))) continue;
+    missing.add(key);
+  }
+  if (missing.size === 0) return;
+  const listed = [...missing].sort(compareStrings).slice(0, 5).join(', ');
+  throw new UserError(
+    `Archive ships ${missing.size} path(s) that could not be inventoried on this filesystem (${listed}). `
+    + 'Paths differing only in case collapse on case-insensitive filesystems, which would hide shipped content; '
+    + 'audit this package on a case-sensitive filesystem.',
+  );
 }
 
 async function findArchiveRoot(temporary: string): Promise<string> {
