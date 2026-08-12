@@ -114,9 +114,11 @@ describe('distribution contracts', () => {
     }
     expect(await projectFile('examples/github-action.yml')).toContain('uses: Dtdkvn/depdiff@');
     const progress = await projectFile('PROGRESS.md');
-    expect(progress).toContain('no configured remote');
+    expect(progress).toContain('`main` tracks `origin/main`');
     expect(progress).toContain('public source repository');
-    expect(progress).toContain('npm package, `v0.1.0` tag, and first reviewed Action release are not published yet');
+    expect(progress).toContain('live as an npm package, GitHub release, and reviewed Action tag');
+    expect(progress).toContain('dbbe8cfd97f81f114c18fa8db670904734faa155');
+    expect(progress).not.toContain('not published yet');
   });
 
   it('pins dependencies and enforces the fail-closed release contract', async () => {

@@ -1,6 +1,6 @@
-# GitHub launch kit
+# GitHub launch kit and v0.1.0 release record
 
-This file contains copy and checks for the public launch of [Depdiff](../README.md). The source repository is live at <https://github.com/Dtdkvn/depdiff>; `depdiff-audit`, the `v0.1.0` tag, and the first reviewed Action release remain unavailable until their publication steps complete.
+This file contains launch copy and the verification record for [Depdiff](../README.md). The source repository is live at <https://github.com/Dtdkvn/depdiff>; [`depdiff-audit@0.1.0`](https://www.npmjs.com/package/depdiff-audit/v/0.1.0), the [`v0.1.0` GitHub release](https://github.com/Dtdkvn/depdiff/releases/tag/v0.1.0), and the reviewed `v0.1.0` Action tag are published.
 
 ## Repository profile
 
@@ -32,7 +32,7 @@ The safety model matters as much as the detectors. Depdiff treats target package
 
 Reports are meant to travel through a real review workflow. A single run can produce a terminal summary, standalone HTML, JSON, Markdown, and SARIF 2.1.0. The HTML report has no external JavaScript or CSS dependency. The GitHub Action adds annotations and report artifacts; the CLI exposes explicit exit codes; and YAML or JSON policy controls severity, score, domains, install scripts, capabilities, dependency count, file count, and accepted fingerprints.
 
-The source-first installation path is available now: clone `https://github.com/Dtdkvn/depdiff`, run `npm ci --ignore-scripts`, then run `npm run demo`. The demo is deterministic, offline, and produces HTML, JSON, Markdown, and SARIF from checked-in safe/risky fixtures. A Docker Compose demo is also included. The `npx depdiff-audit` and hosted `Dtdkvn/depdiff` Action examples are ready for use only after their publication checklist items are complete.
+The fastest installation path is available now: run `npx depdiff-audit@0.1.0 demo --no-fail`. The demo is deterministic, offline, and produces HTML, JSON, Markdown, and SARIF from packaged safe/risky fixtures. Source and Docker Compose paths remain available for contributors and reproducible local review. The hosted `Dtdkvn/depdiff@v0.1.0` Action is live; production workflows should pin its reviewed full commit SHA.
 
 Detector changes have a labeled regression gate, but I want to be precise about what it proves. The full opt-in corpus contains exactly 10 cases: six labeled clean cases and four labeled alert cases. Five clean cases are integrity-pinned ordinary npm release pairs; one is a no-op fixture. Three alert cases are synthetic evasive transformations. Exactly one case uses a human-vetted real compromised release, paired with its clean predecessor. The corpus is deliberately small and selection-biased. Its precision, recall, false-positive rate, and risk scores catch regressions in this project; they are not market-wide accuracy estimates, malware verdicts, or proof that a package is safe.
 
@@ -46,7 +46,7 @@ Depdiff is an open-source, local-first way to review the security-relevant delta
 
 Target packages are treated as hostile data: Depdiff never installs them, imports their modules, or runs lifecycle scripts. It supports offline directory/tarball comparisons, standalone HTML, JSON, Markdown, SARIF, baselines, policy-as-code, and CI exit codes.
 
-The project is source-first today: clone `Dtdkvn/depdiff`, run `npm ci --ignore-scripts`, then `npm run demo`. The npm package, `v0.1.0` tag, and hosted GitHub Action remain explicitly post-release paths.
+Version `0.1.0` is live on npm with provenance, as a GitHub release, and as the reviewed `Dtdkvn/depdiff@v0.1.0` Action tag. Try it with `npx depdiff-audit@0.1.0 demo --no-fail`; source and Docker workflows remain available for local-first use.
 
 Its full benchmark is intentionally modest: 10 labeled cases, including exactly one human-vetted real compromise. Scores prioritize review; they are not malware verdicts. Feedback on missed deltas and noisy findings is welcome.
 
@@ -59,26 +59,26 @@ Its full benchmark is intentionally modest: 10 labeled cases, including exactly 
 ### Repository publication
 
 - [x] Publish the reviewed source at `https://github.com/Dtdkvn/depdiff` with `main` as the default branch.
-- [ ] Add the 151-character About text and the topics listed above.
+- [x] Add the 151-character About text and the topics listed above.
 - [x] Push only the reviewed history and confirm no private branches, artifacts, tokens, or machine-specific files are included.
-- [ ] Confirm the CI badge resolves and Node 22/24 quality, container, and local Action jobs pass on GitHub-hosted runners.
-- [ ] Enable Issues and private vulnerability reporting; verify the [`SECURITY.md`](../SECURITY.md) advisory link resolves.
+- [x] Confirm the CI badge resolves and Node 22/24 quality, container, and local Action jobs pass on GitHub-hosted runners.
+- [x] Enable Issues and private vulnerability reporting; verify the [`SECURITY.md`](../SECURITY.md) advisory link resolves.
 - [ ] Render the README on GitHub and check the demo GIF, report screenshot, Mermaid diagram, headings, and relative links.
-- [ ] Confirm the Action example's reviewed 40-character commit SHA is present in the published history; update it if a later release commit is preferred.
+- [x] Confirm the Action example pins the published `v0.1.0` commit `a14eb01108c8872b7b54849fde9fc0592777621e`.
 
 ### npm and Action publication
 
-- [ ] Recheck ownership/availability of `depdiff-audit` immediately before publication; do not rely on the earlier availability check.
-- [ ] Follow the [release integrity procedure](releasing.md): exact SemVer tag, main ancestry, one verified tarball, provenance, and post-publish shasum verification.
-- [ ] Configure the protected `npm` environment and the documented trusted-publishing or narrowly scoped token path.
-- [ ] Install the published tarball/package in a clean directory and verify the `depdiff` binary, ESM import, types, demo, and package contents.
-- [ ] Verify `npx depdiff-audit demo --no-fail` works before adding an npm version badge or removing the README availability notice.
+- [x] Publish `depdiff-audit@0.1.0` under the verified npm account.
+- [x] Follow the [release integrity procedure](releasing.md): exact SemVer tag, main ancestry, one verified tarball, provenance, and post-publish shasum verification (`dbbe8cfd97f81f114c18fa8db670904734faa155`).
+- [ ] Finish the npm trusted-publisher cutover after publisher account confirmation, then remove the temporary bootstrap credential.
+- [x] Install the published package in a clean directory and verify the `depdiff` binary, ESM import, types, demo, and package contents.
+- [x] Verify `npx depdiff-audit@0.1.0 demo --no-fail` works before adding the npm badge and removing the pre-release notice.
 - [ ] Run the hosted Action from a separate test repository, pinned to a reviewed full SHA, and verify annotations plus HTML/SARIF artifacts.
-- [ ] Update the README's post-publish labels only after each distribution is actually reachable.
+- [x] Update the README's post-publish labels only after each distribution is actually reachable.
 
 ### Launch day
 
-- [ ] Create GitHub release notes that link to the quickstart, [CLI reference](cli.md), [policy reference](policy.md), [rule catalog](rules.md), and [precision benchmark](precision-benchmark.md).
+- [x] Create the `v0.1.0` GitHub release with the exact published tarball and bounded release notes.
 - [ ] Publish the long post where context is welcome and the short post on social channels; use the Hacker News title above for Show HN.
 - [ ] Keep claims bounded: say “review-priority score,” “10 labeled cases,” and “one real compromise sample”; never present the score as a malware verdict.
 - [ ] Invite reproducible false-positive and false-negative reports with exact before/after package versions or local fixtures.

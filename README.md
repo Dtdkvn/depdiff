@@ -3,6 +3,7 @@
   <p><strong>See what an npm update can do now that it could not do before.</strong></p>
   <p>
     <a href="https://github.com/Dtdkvn/depdiff/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Dtdkvn/depdiff/actions/workflows/ci.yml/badge.svg"></a>
+    <a href="https://www.npmjs.com/package/depdiff-audit"><img alt="npm version" src="https://img.shields.io/npm/v/depdiff-audit?color=60f0b2"></a>
     <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-60f0b2"></a>
     <a href="https://nodejs.org"><img alt="Node 22+" src="https://img.shields.io/badge/node-%3E%3D22-60f0b2"></a>
   </p>
@@ -16,9 +17,20 @@ Depdiff downloads—or accepts locally—the old and new npm package tarballs, p
 - **Keep package code on your machine.** Analysis and reports are local; `--offline` makes network access impossible and accepts directories/tarballs only.
 - **Gate updates without a black box.** Stable fingerprints, baselines, policy-as-code, CI exit codes, SARIF, JSON, Markdown, and a standalone HTML report are built in.
 
-> **Availability:** the public GitHub source is the current distribution. `depdiff-audit`, the `v0.1.0` tag, and the first reviewed Action release have not been published yet. Source commands work now; npm and hosted Action paths remain labeled as post-release below.
+> **v0.1.0 is live:** install [`depdiff-audit@0.1.0`](https://www.npmjs.com/package/depdiff-audit/v/0.1.0) from npm, review the [GitHub release](https://github.com/Dtdkvn/depdiff/releases/tag/v0.1.0), or use the `v0.1.0` GitHub Action. The npm package includes provenance; its registry `dist.shasum` is `dbbe8cfd97f81f114c18fa8db670904734faa155`.
 
 ## Quickstart
+
+### npm
+
+Run the deterministic offline demo without installing Depdiff globally:
+
+```bash
+npx depdiff-audit@0.1.0 demo --no-fail
+npx depdiff-audit@0.1.0 compare lodash@4.17.20 lodash@4.17.21
+```
+
+The comparison command writes `depdiff-report.html` unless another output path is supplied.
 
 ### Run from source
 
@@ -44,17 +56,6 @@ docker compose run --rm depdiff
 ```
 
 The container writes artifacts to `reports/`. Compose mounts the repository read-only at `/workspace`, so local artifacts can be scanned with `docker compose run --rm depdiff compare /workspace/old.tgz /workspace/new.tgz --offline --output /reports/review.html`.
-
-### npm, after the first package publish
-
-The package name is prepared as `depdiff-audit`, but it is not available from npm yet. Once the first release is published, these become the shortest paths:
-
-```bash
-npx depdiff-audit demo --no-fail
-npx depdiff-audit compare lodash@4.17.20 lodash@4.17.21
-```
-
-The comparison command writes `depdiff-report.html` unless another output path is supplied.
 
 ![Standalone Depdiff HTML report](docs/assets/report-preview.png)
 
@@ -136,14 +137,14 @@ includeBaseline: false
 | `2` | Invalid input, policy, archive, or configuration |
 | `3` | Unexpected internal failure |
 
-## GitHub Actions, after the first reviewed release
+## GitHub Actions
 
-The Docker Action implementation is public and tested, but the first reviewed Action release has not been published yet. After that release is available, pin its reviewed full commit SHA:
+The reviewed `v0.1.0` Docker Action is public and usable. In production workflows, pin the release to its full commit SHA:
 
 ```yaml
 - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 - name: Audit the candidate update
-  uses: Dtdkvn/depdiff@4a37a516d9f8d4d147457ec561d126618ffc6906 # available after the first reviewed Action release
+  uses: Dtdkvn/depdiff@a14eb01108c8872b7b54849fde9fc0592777621e # v0.1.0
   with:
     before: package-name@1.4.0
     after: package-name@1.5.0
