@@ -28,7 +28,7 @@ if (!details.isFile() || details.size === 0) throw new Error('Release tarball is
 
 const requiredFiles = [
   'README.md', 'SECURITY.md', 'CONTRIBUTING.md', 'CODE_OF_CONDUCT.md', 'CHANGELOG.md',
-  'docs/architecture.md', 'docs/cli.md', 'docs/policy.md', 'docs/rules.md', 'docs/releasing.md',
+  'docs/architecture.md', 'docs/cli.md', 'docs/LAUNCH.md', 'docs/policy.md', 'docs/rules.md', 'docs/releasing.md',
   'docs/assets/demo.gif', 'docs/assets/report-preview.png', 'examples/github-action.yml',
 ];
 const packedFiles = new Set(record.files?.map((entry) => entry.path));

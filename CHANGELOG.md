@@ -39,5 +39,5 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) conventi
 - standalone interactive HTML, deterministic JSON, SARIF 2.1.0, and Markdown reports;
 - Docker/Compose workflow, Docker GitHub Action, CI/release workflows, fixtures, tests, and security documentation.
 
-[Unreleased]: https://github.com/yewud/depdiff/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/yewud/depdiff/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Dtdkvn/depdiff/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Dtdkvn/depdiff/releases/tag/v0.1.0

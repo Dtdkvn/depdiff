@@ -59,12 +59,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yewud/depdiff.git"
+    "url": "git+https://github.com/Dtdkvn/depdiff.git"
   },
   "bugs": {
-    "url": "https://github.com/yewud/depdiff/issues"
+    "url": "https://github.com/Dtdkvn/depdiff/issues"
   },
-  "homepage": "https://github.com/yewud/depdiff#readme",
+  "homepage": "https://github.com/Dtdkvn/depdiff#readme",
   "publishConfig": {
     "access": "public",
     "provenance": true

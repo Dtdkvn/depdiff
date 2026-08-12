@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/yewud/depdiff/main/schemas/policy.schema.json",
+  "$id": "https://raw.githubusercontent.com/Dtdkvn/depdiff/main/schemas/policy.schema.json",
   "title": "Depdiff policy",
   "type": "object",
   "additionalProperties": false,

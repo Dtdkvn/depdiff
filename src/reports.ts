@@ -108,7 +108,7 @@ export function renderSarif(report: DiffReport, options: ReportRenderOptions = {
     runs: [{
       tool: { driver: {
         name: 'Depdiff',
-        informationUri: 'https://github.com/yewud/depdiff',
+        informationUri: 'https://github.com/Dtdkvn/depdiff',
         semanticVersion: report.tool.version,
         rules,
       } },

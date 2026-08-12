@@ -6,7 +6,7 @@ import { parse as parseYaml } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const canonicalRepository = 'https://github.com/yewud/depdiff';
+const canonicalRepository = 'https://github.com/Dtdkvn/depdiff';
 
 describe('distribution contracts', () => {
   it('ships a valid Docker Action metadata layout with explicit input arguments', async () => {
@@ -27,6 +27,17 @@ describe('distribution contracts', () => {
     const missingInput = spawnSync(process.execPath, [path.join(projectRoot, 'scripts', 'action-entrypoint.mjs')], { encoding: 'utf8' });
     expect(missingInput.status).toBe(2);
     expect(missingInput.stderr).toContain('Missing required Action input: before');
+  });
+
+  it('routes GitHub issue intake through structured templates and private security reporting', async () => {
+    const config = parseYaml(await projectFile('.github/ISSUE_TEMPLATE/config.yml')) as {
+      blank_issues_enabled: boolean;
+      contact_links: Array<{ name: string; url: string; about: string }>;
+    };
+    expect(config.blank_issues_enabled).toBe(false);
+    expect(config.contact_links).toEqual(expect.arrayContaining([expect.objectContaining({
+      url: `${canonicalRepository}/security/advisories/new`,
+    })]));
   });
 
   it('supports only maintained Node releases and gates packages and artifacts on Node 24', async () => {
@@ -80,15 +91,21 @@ describe('distribution contracts', () => {
     expect(packageDocument.repository.url).toBe(`git+${canonicalRepository}.git`);
     expect(packageDocument.bugs.url).toBe(`${canonicalRepository}/issues`);
     expect(packageDocument.homepage).toBe(`${canonicalRepository}#readme`);
+    const lockDocument = JSON.parse(await projectFile('package-lock.json')) as {
+      packages: Record<string, { repository?: { url?: string }; bugs?: { url?: string }; homepage?: string }>;
+    };
+    expect(lockDocument.packages['']?.repository?.url).toBe(`git+${canonicalRepository}.git`);
+    expect(lockDocument.packages['']?.bugs?.url).toBe(`${canonicalRepository}/issues`);
+    expect(lockDocument.packages['']?.homepage).toBe(`${canonicalRepository}#readme`);
     expect(await projectFile('src/reports.ts')).toContain(`informationUri: '${canonicalRepository}'`);
     const policySchema = JSON.parse(await projectFile('schemas/policy.schema.json')) as { $id: string };
     const reportSchema = JSON.parse(await projectFile('schemas/report.schema.json')) as { $id: string };
-    expect(policySchema.$id).toBe('https://raw.githubusercontent.com/yewud/depdiff/main/schemas/policy.schema.json');
-    expect(reportSchema.$id).toBe('https://raw.githubusercontent.com/yewud/depdiff/main/schemas/report.schema.json');
+    expect(policySchema.$id).toBe('https://raw.githubusercontent.com/Dtdkvn/depdiff/main/schemas/policy.schema.json');
+    expect(reportSchema.$id).toBe('https://raw.githubusercontent.com/Dtdkvn/depdiff/main/schemas/report.schema.json');
     for (const file of ['README.md', 'CONTRIBUTING.md', 'CHANGELOG.md', 'SECURITY.md', 'PROGRESS.md']) {
       expect(await projectFile(file), file).toContain(canonicalRepository);
     }
-    expect(await projectFile('examples/github-action.yml')).toContain('uses: yewud/depdiff@');
+    expect(await projectFile('examples/github-action.yml')).toContain('uses: Dtdkvn/depdiff@');
     const progress = await projectFile('PROGRESS.md');
     expect(progress).toContain('no remote configured');
     expect(progress).toContain('not been pushed or published to npm');
@@ -146,6 +163,7 @@ describe('distribution contracts', () => {
     expect(packer).toContain("hashFile(tarball, 'sha1'");
     expect(packer).toContain("hashFile(tarball, 'sha512'");
     expect(packer).toContain("'docs/releasing.md'");
+    expect(packer).toContain("'docs/LAUNCH.md'");
     expect(packer).toContain("'examples/github-action.yml'");
 
     const publisher = await projectFile('scripts/publish-release.mjs');
@@ -170,6 +188,7 @@ describe('distribution contracts', () => {
     expect(smoke).toContain("'docs/assets/demo.gif'");
     expect(smoke).toContain("'docs/assets/report-preview.png'");
     expect(smoke).toContain("'docs/precision-benchmark.md'");
+    expect(smoke).toContain("'docs/LAUNCH.md'");
     expect(smoke).toContain('prepareLockedConsumer');
     expect(smoke).toContain("createHash('sha512')");
     expect(smoke).toContain("runNpm(['ci', '--ignore-scripts', '--no-audit', '--no-fund', '--offline'], installRoot)");

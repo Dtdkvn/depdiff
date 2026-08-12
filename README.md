@@ -2,8 +2,7 @@
   <h1>Depdiff</h1>
   <p><strong>See what an npm update can do now that it could not do before.</strong></p>
   <p>
-    <a href="https://github.com/yewud/depdiff/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/yewud/depdiff/actions/workflows/ci.yml/badge.svg"></a>
-    <a href="https://www.npmjs.com/package/depdiff-audit"><img alt="npm" src="https://img.shields.io/npm/v/depdiff-audit?color=60f0b2"></a>
+    <a href="https://github.com/Dtdkvn/depdiff/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Dtdkvn/depdiff/actions/workflows/ci.yml/badge.svg"></a>
     <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-60f0b2"></a>
     <a href="https://nodejs.org"><img alt="Node 22+" src="https://img.shields.io/badge/node-%3E%3D22-60f0b2"></a>
   </p>
@@ -17,17 +16,46 @@ Depdiff downloads—or accepts locally—the old and new npm package tarballs, p
 - **Keep package code on your machine.** Analysis and reports are local; `--offline` makes network access impossible and accepts directories/tarballs only.
 - **Gate updates without a black box.** Stable fingerprints, baselines, policy-as-code, CI exit codes, SARIF, JSON, Markdown, and a standalone HTML report are built in.
 
+> **Availability:** source is the current distribution. `depdiff-audit` has not been published to npm, and the GitHub Action is not consumable until this repository is public. Commands that require the public repository or npm are labeled below.
+
 ## Quickstart
 
+### Run from an existing source checkout
+
 ```bash
-npx depdiff-audit compare lodash@4.17.20 lodash@4.17.21
-npx depdiff-audit demo --no-fail
+cd depdiff
+npm ci --ignore-scripts
+npm run demo
+```
+
+After this repository is public, obtain the same checkout with `git clone https://github.com/Dtdkvn/depdiff.git`.
+
+The demo is deterministic and offline. It compares checked-in safe/risky fixtures and writes HTML, JSON, Markdown, and SARIF reports under `.depdiff-demo/`. The risky fixture deliberately adds an install script, `child_process`, a network destination, encoded code, a maintainer change, and a native-looking binary; Depdiff inspects those files as data and never executes the fixture.
+
+Run a real comparison from the checkout with:
+
+```bash
+npm run dev -- compare lodash@4.17.20 lodash@4.17.21
+```
+
+Or build and run the same offline demo in the hardened container:
+
+```bash
 docker compose run --rm depdiff
 ```
 
-The first command writes `depdiff-report.html`. The second is a deterministic, offline fixture that deliberately adds an install script, `child_process`, a network destination, encoded code, a maintainer change, and a native-looking binary. The Docker command builds and runs that same demo, writing artifacts to `reports/`.
+The container writes artifacts to `reports/`. Compose mounts the repository read-only at `/workspace`, so local artifacts can be scanned with `docker compose run --rm depdiff compare /workspace/old.tgz /workspace/new.tgz --offline --output /reports/review.html`.
 
-Compose mounts the repository read-only at `/workspace`, so local artifacts can be scanned with `docker compose run --rm depdiff compare /workspace/old.tgz /workspace/new.tgz --offline --output /reports/review.html`.
+### npm, after the first package publish
+
+The package name is prepared as `depdiff-audit`, but it is not available from npm yet. Once the first release is published, these become the shortest paths:
+
+```bash
+npx depdiff-audit demo --no-fail
+npx depdiff-audit compare lodash@4.17.20 lodash@4.17.21
+```
+
+The comparison command writes `depdiff-report.html` unless another output path is supplied.
 
 ![Standalone Depdiff HTML report](docs/assets/report-preview.png)
 
@@ -82,7 +110,9 @@ depdiff compare old.tgz new.tgz --offline \
 
 See the complete [CLI reference](docs/cli.md), [policy reference](docs/policy.md), and [rule catalog](docs/rules.md).
 
-Detector changes are gated by a [labeled precision benchmark](docs/precision-benchmark.md) that separates integrity-pinned benign npm releases, a human-vetted real compromise sample, and synthetic evasive regressions.
+Detector changes are gated by a [labeled precision benchmark](docs/precision-benchmark.md). Its full opt-in corpus has exactly 10 cases: six labeled clean (five integrity-pinned npm release pairs plus one no-op fixture) and four labeled alert (three synthetic transformations plus one human-vetted real compromise paired with its clean predecessor). The default offline gate runs the four checked-in fixtures; `npm run benchmark:precision:registry` runs all 10.
+
+That small, selection-biased corpus is a detector regression gate. Its score and metrics are not an ecosystem-wide accuracy estimate, a malware verdict, or proof that any package is safe.
 
 ## Policy and exit codes
 
@@ -107,12 +137,14 @@ includeBaseline: false
 | `2` | Invalid input, policy, archive, or configuration |
 | `3` | Unexpected internal failure |
 
-## GitHub Actions
+## GitHub Actions, after repository publication
+
+The Docker Action is implemented and tested locally, but it cannot be consumed until `Dtdkvn/depdiff` is published on GitHub. The example pins the reviewed release-hardening commit already present in this repository's history:
 
 ```yaml
 - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 - name: Audit the candidate update
-  uses: yewud/depdiff@4a37a516d9f8d4d147457ec561d126618ffc6906 # reviewed release-hardened implementation
+  uses: Dtdkvn/depdiff@4a37a516d9f8d4d147457ec561d126618ffc6906 # available after repository publication
   with:
     before: package-name@1.4.0
     after: package-name@1.5.0
@@ -172,4 +204,4 @@ npm run check
 npm run demo
 ```
 
-Node.js 22+ is supported; Node 24 is the default development and release runtime. Contributions are welcome—start with [CONTRIBUTING.md](CONTRIBUTING.md). Depdiff is MIT-licensed.
+Node.js 22+ is supported; Node 24 is the default development and release runtime. Contributions are welcome—start with [CONTRIBUTING.md](CONTRIBUTING.md). Maintainers can use the [GitHub launch kit](docs/LAUNCH.md). Depdiff is MIT-licensed.

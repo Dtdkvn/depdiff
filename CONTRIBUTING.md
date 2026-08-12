@@ -7,7 +7,7 @@ Thank you for helping make npm update review more understandable and local-first
 Requirements: Node.js 22+ and npm 10+. Node 24 and the npm version declared by `packageManager` are the project defaults.
 
 ```bash
-git clone https://github.com/yewud/depdiff.git
+git clone https://github.com/Dtdkvn/depdiff.git
 cd depdiff
 npm ci --ignore-scripts
 npm run check
