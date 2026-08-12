@@ -4,6 +4,8 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) conventi
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-12
+
 ### Fixed
 
 - flags shipped dependencies that switch from registry versions to Git, URL, archive, workspace, or local paths, and flags later changes between those external sources;
@@ -27,8 +29,6 @@ All notable changes use [Keep a Changelog](https://keepachangelog.com/) conventi
 - dropped Node 20, with maintained Node 22/24 CI coverage and Node 24 package/release defaults;
 - made tagged releases prove main-branch ancestry, pack once, publish the verified tarball, and fail closed on registry shasum mismatches;
 - shipped linked documentation, assets, and examples in the npm tarball with installed-package and local-link smoke tests.
-
-## [0.1.0] - 2026-08-11
 
 ### Added
 
